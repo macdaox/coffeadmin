@@ -53,6 +53,47 @@ function toPublicProduct(product) {
   };
 }
 
+function toPublicAppUser(user) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName || user.username,
+    isActive: Boolean(user.isActive),
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt
+  };
+}
+
+function validateAppUserInput(input, partial = false) {
+  const errors = [];
+  const data = {};
+
+  if (!partial || input.username !== undefined) {
+    data.username = String(input.username || '').trim();
+    if (!data.username) errors.push('账号不能为空');
+    if (data.username && !/^[A-Za-z0-9_.-]{3,32}$/.test(data.username)) {
+      errors.push('账号只能使用 3-32 位字母、数字、下划线、点或短横线');
+    }
+  }
+
+  if (!partial || input.displayName !== undefined) {
+    data.displayName = String(input.displayName || '').trim();
+  }
+
+  if (!partial || input.password !== undefined) {
+    data.password = String(input.password || '');
+    if (!partial && !data.password) errors.push('密码不能为空');
+    if (data.password && data.password.length < 6) errors.push('密码至少 6 位');
+  }
+
+  if (!partial || input.isActive !== undefined) {
+    data.isActive = input.isActive === undefined ? true : Boolean(input.isActive);
+  }
+
+  return { data, errors };
+}
+
 function validateProductInput(input, partial = false) {
   const errors = [];
   const data = {};
@@ -111,7 +152,9 @@ function emptyVariants() {
         enabled: false,
         cupType: variant.cupType,
         temperature: variant.temperature,
-        method: ''
+        method: '',
+        isRecommended: false,
+        hotScore: 0
       }
     ])
   );
@@ -189,8 +232,10 @@ class JsonProductStore {
   constructor(filePath) {
     this.filePath = filePath || path.join(__dirname, '..', 'data', 'products.json');
     this.adminFilePath = path.join(path.dirname(this.filePath), 'admin-users.json');
+    this.appUserFilePath = path.join(path.dirname(this.filePath), 'app-users.json');
     this.products = [];
     this.adminUsers = [];
+    this.appUsers = [];
   }
 
   async init() {
@@ -208,6 +253,7 @@ class JsonProductStore {
       await this.save();
     }
     await this.initAdminUsers();
+    await this.initAppUsers();
   }
 
   async save() {
@@ -216,6 +262,10 @@ class JsonProductStore {
 
   async saveAdminUsers() {
     await fs.writeFile(this.adminFilePath, JSON.stringify(this.adminUsers, null, 2));
+  }
+
+  async saveAppUsers() {
+    await fs.writeFile(this.appUserFilePath, JSON.stringify(this.appUsers, null, 2));
   }
 
   async initAdminUsers() {
@@ -240,6 +290,16 @@ class JsonProductStore {
       if (!process.env.ADMIN_PASSWORD) {
         console.warn('Created local default admin user: admin / admin123456');
       }
+    }
+  }
+
+  async initAppUsers() {
+    try {
+      const raw = await fs.readFile(this.appUserFilePath, 'utf8');
+      this.appUsers = JSON.parse(raw);
+    } catch (error) {
+      this.appUsers = [];
+      await this.saveAppUsers();
     }
   }
 
@@ -386,6 +446,94 @@ class JsonProductStore {
     if (!user || !verifyPassword(password, user.passwordHash)) return null;
     return { id: user.id, username: user.username };
   }
+
+  async listAppUsers({ keyword = '', page = 1, pageSize = 50 } = {}) {
+    const q = normalizeKeyword(keyword);
+    const filtered = this.appUsers
+      .filter((item) => !q || item.username.toLowerCase().includes(q) || String(item.displayName || '').toLowerCase().includes(q))
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    const start = (Math.max(page, 1) - 1) * pageSize;
+    return {
+      total: filtered.length,
+      items: filtered.slice(start, start + pageSize).map(toPublicAppUser)
+    };
+  }
+
+  async createAppUser(input) {
+    const { data, errors } = validateAppUserInput(input);
+    if (errors.length) {
+      const error = new Error(errors.join('；'));
+      error.status = 400;
+      throw error;
+    }
+    if (this.appUsers.some((item) => item.username === data.username)) {
+      const error = new Error('账号已存在');
+      error.status = 409;
+      throw error;
+    }
+    const stamp = nowIso();
+    const user = {
+      id: makeId(),
+      username: data.username,
+      displayName: data.displayName || data.username,
+      passwordHash: makePasswordHash(data.password),
+      isActive: data.isActive !== false,
+      createdAt: stamp,
+      updatedAt: stamp
+    };
+    this.appUsers.unshift(user);
+    await this.saveAppUsers();
+    return toPublicAppUser(user);
+  }
+
+  async updateAppUser(id, input) {
+    const index = this.appUsers.findIndex((item) => item.id === id);
+    if (index < 0) {
+      const error = new Error('用户不存在');
+      error.status = 404;
+      throw error;
+    }
+    const { data, errors } = validateAppUserInput(input, true);
+    if (errors.length) {
+      const error = new Error(errors.join('；'));
+      error.status = 400;
+      throw error;
+    }
+    if (data.username && this.appUsers.some((item) => item.id !== id && item.username === data.username)) {
+      const error = new Error('账号已存在');
+      error.status = 409;
+      throw error;
+    }
+    const next = {
+      ...this.appUsers[index],
+      updatedAt: nowIso()
+    };
+    if (data.username !== undefined) next.username = data.username;
+    if (data.displayName !== undefined) next.displayName = data.displayName || next.username;
+    if (data.isActive !== undefined) next.isActive = data.isActive;
+    if (data.password) next.passwordHash = makePasswordHash(data.password);
+    this.appUsers[index] = next;
+    await this.saveAppUsers();
+    return toPublicAppUser(next);
+  }
+
+  async deleteAppUser(id) {
+    const before = this.appUsers.length;
+    this.appUsers = this.appUsers.filter((item) => item.id !== id);
+    if (this.appUsers.length === before) {
+      const error = new Error('用户不存在');
+      error.status = 404;
+      throw error;
+    }
+    await this.saveAppUsers();
+    return true;
+  }
+
+  async verifyAppUserLogin(username, password) {
+    const user = this.appUsers.find((item) => item.username === String(username || '').trim());
+    if (!user || !user.isActive || !verifyPassword(password, user.passwordHash)) return null;
+    return toPublicAppUser(user);
+  }
 }
 
 class MySqlProductStore {
@@ -426,6 +574,7 @@ class MySqlProductStore {
       }
     }
     await this.initAdminUsers();
+    await this.initAppUsers();
   }
 
   async initAdminUsers() {
@@ -455,6 +604,30 @@ class MySqlProductStore {
        VALUES (?, ?, ?, ?, ?)`,
       [makeId(), username, makePasswordHash(password), stamp, stamp]
     );
+  }
+
+  async initAppUsers() {
+    await this.pool.execute(`
+      CREATE TABLE IF NOT EXISTS app_users (
+        id VARCHAR(64) PRIMARY KEY,
+        username VARCHAR(64) NOT NULL UNIQUE,
+        displayName VARCHAR(64) NOT NULL,
+        passwordHash VARCHAR(255) NOT NULL,
+        isActive TINYINT(1) NOT NULL DEFAULT 1,
+        createdAt DATETIME NOT NULL,
+        updatedAt DATETIME NOT NULL,
+        INDEX idx_app_users_updated (updatedAt)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+  }
+
+  rowToAppUser(row) {
+    return toPublicAppUser({
+      ...row,
+      isActive: Boolean(row.isActive),
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+      updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt
+    });
   }
 
   rowToProduct(row) {
@@ -654,6 +827,108 @@ class MySqlProductStore {
     const user = rows[0];
     if (!user || !verifyPassword(password, user.passwordHash)) return null;
     return { id: user.id, username: user.username };
+  }
+
+  async listAppUsers({ keyword = '', page = 1, pageSize = 50 } = {}) {
+    const offset = (Math.max(page, 1) - 1) * pageSize;
+    const hasKeyword = String(keyword || '').trim().length > 0;
+    const params = hasKeyword ? [`%${String(keyword || '').trim()}%`, `%${String(keyword || '').trim()}%`] : [];
+    const where = hasKeyword ? 'WHERE username LIKE ? OR displayName LIKE ?' : '';
+    const [[{ total }]] = await this.pool.execute(`SELECT COUNT(*) AS total FROM app_users ${where}`, params);
+    const [rows] = await this.pool.execute(
+      `SELECT * FROM app_users ${where} ORDER BY updatedAt DESC LIMIT ? OFFSET ?`,
+      [...params, Number(pageSize), Number(offset)]
+    );
+    return { total, items: rows.map((row) => this.rowToAppUser(row)) };
+  }
+
+  async createAppUser(input) {
+    const { data, errors } = validateAppUserInput(input);
+    if (errors.length) {
+      const error = new Error(errors.join('；'));
+      error.status = 400;
+      throw error;
+    }
+    const stamp = nowIso().slice(0, 19).replace('T', ' ');
+    const user = {
+      id: makeId(),
+      username: data.username,
+      displayName: data.displayName || data.username,
+      passwordHash: makePasswordHash(data.password),
+      isActive: data.isActive !== false ? 1 : 0,
+      createdAt: stamp,
+      updatedAt: stamp
+    };
+    try {
+      await this.pool.execute(
+        `INSERT INTO app_users (id, username, displayName, passwordHash, isActive, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [user.id, user.username, user.displayName, user.passwordHash, user.isActive, stamp, stamp]
+      );
+    } catch (error) {
+      if (error.code === 'ER_DUP_ENTRY') {
+        error.status = 409;
+        error.message = '账号已存在';
+      }
+      throw error;
+    }
+    return this.rowToAppUser(user);
+  }
+
+  async updateAppUser(id, input) {
+    const [rows] = await this.pool.execute('SELECT * FROM app_users WHERE id = ? LIMIT 1', [id]);
+    const current = rows[0];
+    if (!current) {
+      const error = new Error('用户不存在');
+      error.status = 404;
+      throw error;
+    }
+    const { data, errors } = validateAppUserInput(input, true);
+    if (errors.length) {
+      const error = new Error(errors.join('；'));
+      error.status = 400;
+      throw error;
+    }
+    const next = {
+      username: data.username !== undefined ? data.username : current.username,
+      displayName: data.displayName !== undefined ? data.displayName || (data.username || current.username) : current.displayName,
+      passwordHash: data.password ? makePasswordHash(data.password) : current.passwordHash,
+      isActive: data.isActive !== undefined ? (data.isActive ? 1 : 0) : current.isActive,
+      updatedAt: nowIso().slice(0, 19).replace('T', ' ')
+    };
+    try {
+      await this.pool.execute(
+        `UPDATE app_users
+         SET username = ?, displayName = ?, passwordHash = ?, isActive = ?, updatedAt = ?
+         WHERE id = ?`,
+        [next.username, next.displayName, next.passwordHash, next.isActive, next.updatedAt, id]
+      );
+    } catch (error) {
+      if (error.code === 'ER_DUP_ENTRY') {
+        error.status = 409;
+        error.message = '账号已存在';
+      }
+      throw error;
+    }
+    const [updatedRows] = await this.pool.execute('SELECT * FROM app_users WHERE id = ? LIMIT 1', [id]);
+    return this.rowToAppUser(updatedRows[0]);
+  }
+
+  async deleteAppUser(id) {
+    const [result] = await this.pool.execute('DELETE FROM app_users WHERE id = ?', [id]);
+    if (result.affectedRows === 0) {
+      const error = new Error('用户不存在');
+      error.status = 404;
+      throw error;
+    }
+    return true;
+  }
+
+  async verifyAppUserLogin(username, password) {
+    const [rows] = await this.pool.execute('SELECT * FROM app_users WHERE username = ? LIMIT 1', [String(username || '').trim()]);
+    const user = rows[0];
+    if (!user || !user.isActive || !verifyPassword(password, user.passwordHash)) return null;
+    return this.rowToAppUser(user);
   }
 }
 

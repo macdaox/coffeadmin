@@ -122,6 +122,28 @@ textarea {
   background: #fff;
 }
 
+.panel + .panel {
+  margin-top: 18px;
+}
+
+.panel-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 18px;
+  border-bottom: 1px solid #edf0ea;
+}
+
+.panel-title h2 {
+  font-size: 18px;
+}
+
+.panel-title p {
+  margin-top: 4px;
+  font-size: 14px;
+}
+
 table {
   width: 100%;
   min-width: 900px;
@@ -212,6 +234,23 @@ label {
 .badge.recommend {
   background: #fff3d9;
   color: #9a6500;
+}
+
+.status {
+  display: inline-flex;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.status.active {
+  background: #edf4eb;
+  color: #2f6f4e;
+}
+
+.status.disabled {
+  background: #f3f3f1;
+  color: #8a918a;
 }
 
 .muted {

@@ -5,13 +5,19 @@ const usernameInput = document.querySelector('#usernameInput');
 const passwordInput = document.querySelector('#passwordInput');
 const bodyEl = document.querySelector('#productBody');
 const emptyEl = document.querySelector('#emptyState');
+const userBodyEl = document.querySelector('#userBody');
+const userEmptyEl = document.querySelector('#userEmptyState');
 const keywordInput = document.querySelector('#keywordInput');
 const searchBtn = document.querySelector('#searchBtn');
 const newBtn = document.querySelector('#newBtn');
+const newUserBtn = document.querySelector('#newUserBtn');
 const logoutBtn = document.querySelector('#logoutBtn');
 const dialog = document.querySelector('#editorDialog');
 const form = document.querySelector('#productForm');
 const closeBtn = document.querySelector('#closeBtn');
+const userDialog = document.querySelector('#userDialog');
+const userForm = document.querySelector('#userForm');
+const userCloseBtn = document.querySelector('#userCloseBtn');
 const toastEl = document.querySelector('#toast');
 
 const fields = {
@@ -23,6 +29,7 @@ const fields = {
 const variantKeys = ['standardCold', 'standardHot', 'bucketCold', 'bucketHot'];
 
 let products = [];
+let appUsers = [];
 
 function toast(message) {
   toastEl.textContent = message;
@@ -36,6 +43,14 @@ async function request(url, options = {}) {
   const json = await res.json();
   if (!res.ok || !json.success) throw new Error(json.message || '请求失败');
   return json;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
 }
 
 function showLogin() {
@@ -59,18 +74,38 @@ function render() {
     .map(
       (item) => `
         <tr>
-          <td>${item.name}</td>
+          <td>${escapeHtml(item.name)}</td>
           <td>${renderVariantBadges(item.variants)}</td>
           <td>${formatTime(item.updatedAt)}</td>
           <td>
-            <button data-action="edit" data-name="${item.name}">编辑</button>
-            <button data-action="delete" data-name="${item.name}">删除</button>
+            <button data-action="edit" data-name="${escapeHtml(item.name)}">编辑</button>
+            <button data-action="delete" data-name="${escapeHtml(item.name)}">删除</button>
           </td>
         </tr>
       `
     )
     .join('');
   emptyEl.style.display = products.length ? 'none' : 'block';
+}
+
+function renderUsers() {
+  userBodyEl.innerHTML = appUsers
+    .map(
+      (item) => `
+        <tr>
+          <td>${escapeHtml(item.username)}</td>
+          <td>${escapeHtml(item.displayName || '-')}</td>
+          <td><span class="status ${item.isActive ? 'active' : 'disabled'}">${item.isActive ? '启用' : '停用'}</span></td>
+          <td>${formatTime(item.updatedAt)}</td>
+          <td>
+            <button data-action="edit-user" data-id="${escapeHtml(item.id)}">编辑</button>
+            <button data-action="delete-user" data-id="${escapeHtml(item.id)}">删除</button>
+          </td>
+        </tr>
+      `
+    )
+    .join('');
+  userEmptyEl.style.display = appUsers.length ? 'none' : 'block';
 }
 
 function renderVariantBadges(variants = {}) {
@@ -86,7 +121,7 @@ function renderVariantBadges(variants = {}) {
     .map((key) => {
       const variant = variants[key];
       const recommend = variant.isRecommended ? '<span class="badge recommend">荐</span>' : '';
-      return `<span class="badge">${labels[key]} · ${variant.hotScore || 0}</span>${recommend}`;
+      return `<span class="badge">${escapeHtml(labels[key])} · ${Number(variant.hotScore || 0)}</span>${recommend}`;
     })
     .join('');
 }
@@ -100,6 +135,12 @@ async function loadProducts() {
   const json = await request(`/api/admin/product/list?${params.toString()}`);
   products = json.data;
   render();
+}
+
+async function loadAppUsers() {
+  const json = await request('/api/admin/app-user/list?page=1&pageSize=100');
+  appUsers = json.data;
+  renderUsers();
 }
 
 function openEditor(product) {
@@ -148,6 +189,27 @@ function getPayload() {
   };
 }
 
+function openUserEditor(user) {
+  document.querySelector('#userDialogTitle').textContent = user ? '编辑用户' : '新增用户';
+  document.querySelector('#userIdInput').value = user?.id || '';
+  document.querySelector('#appUsernameInput').value = user?.username || '';
+  document.querySelector('#displayNameInput').value = user?.displayName || '';
+  document.querySelector('#appPasswordInput').value = '';
+  document.querySelector('#appPasswordInput').required = !user;
+  document.querySelector('#isActiveInput').checked = user ? Boolean(user.isActive) : true;
+  userDialog.showModal();
+}
+
+function getUserPayload() {
+  return {
+    id: document.querySelector('#userIdInput').value,
+    username: document.querySelector('#appUsernameInput').value.trim(),
+    displayName: document.querySelector('#displayNameInput').value.trim(),
+    password: document.querySelector('#appPasswordInput').value,
+    isActive: document.querySelector('#isActiveInput').checked
+  };
+}
+
 searchBtn.addEventListener('click', () => {
   loadProducts().catch((error) => toast(error.message));
 });
@@ -158,6 +220,8 @@ keywordInput.addEventListener('keydown', (event) => {
 
 newBtn.addEventListener('click', () => openEditor());
 closeBtn.addEventListener('click', () => dialog.close());
+newUserBtn.addEventListener('click', () => openUserEditor());
+userCloseBtn.addEventListener('click', () => userDialog.close());
 
 loginForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -171,7 +235,7 @@ loginForm.addEventListener('submit', async (event) => {
     });
     passwordInput.value = '';
     showAdmin();
-    await loadProducts();
+    await Promise.all([loadProducts(), loadAppUsers()]);
   } catch (error) {
     toast(error.message);
   }
@@ -184,7 +248,9 @@ logoutBtn.addEventListener('click', async () => {
     // Ignore logout network errors; the local page should still return to login.
   }
   products = [];
+  appUsers = [];
   render();
+  renderUsers();
   showLogin();
 });
 
@@ -210,6 +276,28 @@ bodyEl.addEventListener('click', async (event) => {
   }
 });
 
+userBodyEl.addEventListener('click', async (event) => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  const user = appUsers.find((item) => item.id === button.dataset.id);
+  if (button.dataset.action === 'edit-user') {
+    openUserEditor(user);
+  }
+  if (button.dataset.action === 'delete-user') {
+    if (!confirm(`确认删除账号「${user.username}」？`)) return;
+    try {
+      await request('/api/admin/app-user/delete', {
+        method: 'DELETE',
+        body: JSON.stringify({ id: user.id })
+      });
+      toast('已删除');
+      await loadAppUsers();
+    } catch (error) {
+      toast(error.message);
+    }
+  }
+});
+
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   const payload = getPayload();
@@ -227,11 +315,29 @@ form.addEventListener('submit', async (event) => {
   }
 });
 
+userForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const payload = getUserPayload();
+  const isEdit = Boolean(payload.id);
+  if (isEdit && !payload.password) delete payload.password;
+  try {
+    await request(isEdit ? '/api/admin/app-user/update' : '/api/admin/app-user/create', {
+      method: isEdit ? 'PUT' : 'POST',
+      body: JSON.stringify(payload)
+    });
+    userDialog.close();
+    toast('用户已保存');
+    await loadAppUsers();
+  } catch (error) {
+    toast(error.message);
+  }
+});
+
 async function bootstrap() {
   try {
     await request('/api/admin/session');
     showAdmin();
-    await loadProducts();
+    await Promise.all([loadProducts(), loadAppUsers()]);
   } catch (error) {
     showLogin();
   }

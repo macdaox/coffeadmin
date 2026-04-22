@@ -27,7 +27,7 @@
       <section class="toolbar">
         <div>
           <h1>咖啡 SOP 后台管理</h1>
-          <p>维护产品、推荐状态和热度值</p>
+          <p>维护产品、推荐状态、热度值和小程序使用权限</p>
         </div>
         <div class="actions">
           <input id="keywordInput" type="search" placeholder="搜索产品" />
@@ -38,6 +38,9 @@
       </section>
 
       <section class="panel">
+        <div class="panel-title">
+          <h2>产品 SOP</h2>
+        </div>
         <table>
           <thead>
             <tr>
@@ -50,6 +53,29 @@
           <tbody id="productBody"></tbody>
         </table>
         <div id="emptyState" class="empty">暂无产品</div>
+      </section>
+
+      <section class="panel user-panel">
+        <div class="panel-title">
+          <div>
+            <h2>小程序用户</h2>
+            <p>只有这里添加并启用的账号，才能登录小程序查询 SOP</p>
+          </div>
+          <button id="newUserBtn" class="primary">新增用户</button>
+        </div>
+        <table class="user-table">
+          <thead>
+            <tr>
+              <th>账号</th>
+              <th>姓名/备注</th>
+              <th>状态</th>
+              <th>更新时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="userBody"></tbody>
+        </table>
+        <div id="userEmptyState" class="empty">暂无小程序用户</div>
       </section>
     </main>
 
@@ -101,6 +127,37 @@
         </section>
         <footer>
           <button type="submit" class="primary">保存</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="userDialog">
+      <form id="userForm" method="dialog">
+        <header>
+          <h2 id="userDialogTitle">新增用户</h2>
+          <button type="button" id="userCloseBtn" class="ghost">关闭</button>
+        </header>
+        <input type="hidden" id="userIdInput" />
+        <div class="row">
+          <label>
+            登录账号
+            <input id="appUsernameInput" autocomplete="off" required placeholder="例如：store01" />
+          </label>
+          <label>
+            姓名/备注
+            <input id="displayNameInput" autocomplete="off" placeholder="例如：门店 A" />
+          </label>
+        </div>
+        <label>
+          密码
+          <input id="appPasswordInput" type="password" autocomplete="new-password" placeholder="新增必填，编辑时留空则不修改" />
+        </label>
+        <label class="check">
+          <input id="isActiveInput" type="checkbox" checked />
+          启用账号
+        </label>
+        <footer>
+          <button type="submit" class="primary">保存用户</button>
         </footer>
       </form>
     </dialog>

@@ -35,6 +35,20 @@ function createSessionToken(user) {
     JSON.stringify({
       id: user.id,
       username: user.username,
+      kind: 'admin',
+      exp: Math.floor(Date.now() / 1000) + sessionMaxAgeSeconds
+    })
+  );
+  return `${payload}.${sign(payload)}`;
+}
+
+function createAppToken(user) {
+  const payload = base64url(
+    JSON.stringify({
+      id: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      kind: 'app',
       exp: Math.floor(Date.now() / 1000) + sessionMaxAgeSeconds
     })
   );
@@ -60,7 +74,12 @@ function verifySessionToken(token) {
   try {
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     if (!data.exp || data.exp < Math.floor(Date.now() / 1000)) return null;
-    return { id: data.id, username: data.username };
+    return {
+      id: data.id,
+      username: data.username,
+      displayName: data.displayName,
+      kind: data.kind || 'admin'
+    };
   } catch (error) {
     return null;
   }
@@ -80,13 +99,29 @@ function clearSessionCookie(res) {
 
 function getSessionUser(req) {
   const cookies = parseCookies(req);
-  return verifySessionToken(cookies.admin_session);
+  const user = verifySessionToken(cookies.admin_session);
+  return user?.kind === 'admin' ? user : null;
 }
 
 function requireAdmin(req, res, next) {
   const user = getSessionUser(req);
   if (!user) return fail(res, 401, '请先登录');
   req.adminUser = user;
+  return next();
+}
+
+function getBearerUser(req) {
+  const header = String(req.headers.authorization || '');
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) return null;
+  const user = verifySessionToken(match[1]);
+  return user?.kind === 'app' ? user : null;
+}
+
+function requireAppUser(req, res, next) {
+  const user = getBearerUser(req);
+  if (!user) return fail(res, 401, '请先登录后再查询');
+  req.appUser = user;
   return next();
 }
 
@@ -119,7 +154,30 @@ app.get('/api/admin/session', (req, res) => {
   ok(res, user);
 });
 
-app.post('/api/product/search', async (req, res, next) => {
+app.post('/api/user/login', async (req, res, next) => {
+  try {
+    const username = String(req.body.username || '').trim();
+    const password = String(req.body.password || '');
+    if (!username || !password) return fail(res, 400, '请输入账号和密码');
+    const user = await store.verifyAppUserLogin(username, password);
+    if (!user) return fail(res, 401, '账号或密码错误，或账号已被停用');
+    ok(res, { token: createAppToken(user), user });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/user/session', (req, res) => {
+  const user = getBearerUser(req);
+  if (!user) return fail(res, 401, '未登录');
+  ok(res, {
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName || user.username
+  });
+});
+
+app.post('/api/product/search', requireAppUser, async (req, res, next) => {
   try {
     const keyword = String(req.body.keyword || '').trim();
     if (!keyword) return fail(res, 400, '请输入产品名称');
@@ -137,7 +195,7 @@ app.post('/api/product/search', async (req, res, next) => {
   }
 });
 
-app.get('/api/product/recommend', async (req, res, next) => {
+app.get('/api/product/recommend', requireAppUser, async (req, res, next) => {
   try {
     const limit = Math.min(Number(req.query.limit || 8), 20);
     ok(res, await store.recommend(limit));
@@ -182,6 +240,50 @@ app.delete('/api/admin/product/delete', requireAdmin, async (req, res, next) => 
     const name = req.body.name || req.query.name;
     if (!name) return fail(res, 400, '缺少产品名称');
     await store.deleteGroup(String(name));
+    ok(res, true);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/app-user/list', requireAdmin, async (req, res, next) => {
+  try {
+    const page = Math.max(Number(req.query.page || 1), 1);
+    const pageSize = Math.min(Math.max(Number(req.query.pageSize || 50), 1), 100);
+    const result = await store.listAppUsers({
+      keyword: req.query.keyword || '',
+      page,
+      pageSize
+    });
+    ok(res, result.items, { total: result.total, page, pageSize });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/app-user/create', requireAdmin, async (req, res, next) => {
+  try {
+    ok(res, await store.createAppUser(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put('/api/admin/app-user/update', requireAdmin, async (req, res, next) => {
+  try {
+    const id = String(req.body.id || '').trim();
+    if (!id) return fail(res, 400, '缺少用户 ID');
+    ok(res, await store.updateAppUser(id, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/admin/app-user/delete', requireAdmin, async (req, res, next) => {
+  try {
+    const id = String(req.body.id || req.query.id || '').trim();
+    if (!id) return fail(res, 400, '缺少用户 ID');
+    await store.deleteAppUser(id);
     ok(res, true);
   } catch (error) {
     next(error);
