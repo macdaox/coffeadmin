@@ -42,10 +42,7 @@
           <thead>
             <tr>
               <th>品名</th>
-              <th>杯型</th>
-              <th>温度</th>
-              <th>推荐</th>
-              <th>热度</th>
+              <th>已配置规格</th>
               <th>更新时间</th>
               <th>操作</th>
             </tr>
@@ -63,40 +60,45 @@
           <button type="button" id="closeBtn" class="ghost">关闭</button>
         </header>
         <input type="hidden" id="idInput" />
+        <input type="hidden" id="previousNameInput" />
         <label>
           品名
           <input id="nameInput" required placeholder="例如：冰拿铁" />
         </label>
-        <div class="row">
-          <label>
-            杯型
-            <select id="cupTypeInput">
-              <option>标准杯</option>
-              <option>吨吨桶</option>
-            </select>
-          </label>
-          <label>
-            温度
-            <select id="temperatureInput">
-              <option>冷</option>
-              <option>热</option>
-            </select>
-          </label>
-        </div>
-        <label>
-          制作方法
-          <textarea id="methodInput" required rows="7" placeholder="1. 加冰&#10;2. 加牛奶 30ml"></textarea>
-        </label>
-        <div class="row">
-          <label class="check">
-            <input id="isRecommendedInput" type="checkbox" />
-            设为推荐
-          </label>
-          <label>
-            热度值
-            <input id="hotScoreInput" type="number" min="0" step="1" value="0" />
-          </label>
-        </div>
+        <section class="variant-grid">
+          <article class="variant-card" data-variant="standardCold">
+            <label class="check"><input data-field="enabled" type="checkbox" />标准杯（冷）</label>
+            <div class="variant-meta">
+              <label class="check"><input data-field="isRecommended" type="checkbox" />推荐</label>
+              <label>热度值<input data-field="hotScore" type="number" min="0" step="1" value="0" /></label>
+            </div>
+            <textarea data-field="method" rows="5" placeholder="1. 加冰&#10;2. 加牛奶 30ml"></textarea>
+          </article>
+          <article class="variant-card" data-variant="standardHot">
+            <label class="check"><input data-field="enabled" type="checkbox" />标准杯（热）</label>
+            <div class="variant-meta">
+              <label class="check"><input data-field="isRecommended" type="checkbox" />推荐</label>
+              <label>热度值<input data-field="hotScore" type="number" min="0" step="1" value="0" /></label>
+            </div>
+            <textarea data-field="method" rows="5" placeholder="1. 加热水&#10;2. 点击意式精粹"></textarea>
+          </article>
+          <article class="variant-card" data-variant="bucketCold">
+            <label class="check"><input data-field="enabled" type="checkbox" />吨吨桶（冷）</label>
+            <div class="variant-meta">
+              <label class="check"><input data-field="isRecommended" type="checkbox" />推荐</label>
+              <label>热度值<input data-field="hotScore" type="number" min="0" step="1" value="0" /></label>
+            </div>
+            <textarea data-field="method" rows="5" placeholder="1. 加冰&#10;2. 加牛奶至杯线"></textarea>
+          </article>
+          <article class="variant-card" data-variant="bucketHot">
+            <label class="check"><input data-field="enabled" type="checkbox" />吨吨桶（热）</label>
+            <div class="variant-meta">
+              <label class="check"><input data-field="isRecommended" type="checkbox" />推荐</label>
+              <label>热度值<input data-field="hotScore" type="number" min="0" step="1" value="0" /></label>
+            </div>
+            <textarea data-field="method" rows="5" placeholder="1. 加热水&#10;2. 加浓缩咖啡"></textarea>
+          </article>
+        </section>
         <footer>
           <button type="submit" class="primary">保存</button>
         </footer>

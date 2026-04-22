@@ -150,7 +150,7 @@ app.get('/api/admin/product/list', requireAdmin, async (req, res, next) => {
   try {
     const page = Math.max(Number(req.query.page || 1), 1);
     const pageSize = Math.min(Math.max(Number(req.query.pageSize || 20), 1), 100);
-    const result = await store.list({
+    const result = await store.listGroups({
       keyword: req.query.keyword || '',
       page,
       pageSize
@@ -163,7 +163,7 @@ app.get('/api/admin/product/list', requireAdmin, async (req, res, next) => {
 
 app.post('/api/admin/product/create', requireAdmin, async (req, res, next) => {
   try {
-    ok(res, await store.create(req.body));
+    ok(res, await store.saveGroup(req.body));
   } catch (error) {
     next(error);
   }
@@ -171,9 +171,7 @@ app.post('/api/admin/product/create', requireAdmin, async (req, res, next) => {
 
 app.put('/api/admin/product/update', requireAdmin, async (req, res, next) => {
   try {
-    const id = req.body.id || req.query.id;
-    if (!id) return fail(res, 400, '缺少产品 id');
-    ok(res, await store.update(id, req.body));
+    ok(res, await store.saveGroup(req.body));
   } catch (error) {
     next(error);
   }
@@ -181,9 +179,9 @@ app.put('/api/admin/product/update', requireAdmin, async (req, res, next) => {
 
 app.delete('/api/admin/product/delete', requireAdmin, async (req, res, next) => {
   try {
-    const id = req.body.id || req.query.id;
-    if (!id) return fail(res, 400, '缺少产品 id');
-    await store.delete(id);
+    const name = req.body.name || req.query.name;
+    if (!name) return fail(res, 400, '缺少产品名称');
+    await store.deleteGroup(String(name));
     ok(res, true);
   } catch (error) {
     next(error);

@@ -90,6 +90,101 @@ function validateProductInput(input, partial = false) {
   return { data, errors };
 }
 
+const VARIANT_KEYS = [
+  { key: 'standardCold', cupType: '标准杯', temperature: '冷', label: '标准杯（冷）' },
+  { key: 'standardHot', cupType: '标准杯', temperature: '热', label: '标准杯（热）' },
+  { key: 'bucketCold', cupType: '吨吨桶', temperature: '冷', label: '吨吨桶（冷）' },
+  { key: 'bucketHot', cupType: '吨吨桶', temperature: '热', label: '吨吨桶（热）' }
+];
+
+function makeVariantKey(cupType, temperature) {
+  const item = VARIANT_KEYS.find((variant) => variant.cupType === cupType && variant.temperature === temperature);
+  return item ? item.key : `${cupType}-${temperature}`;
+}
+
+function emptyVariants() {
+  return Object.fromEntries(
+    VARIANT_KEYS.map((variant) => [
+      variant.key,
+      {
+        id: '',
+        enabled: false,
+        cupType: variant.cupType,
+        temperature: variant.temperature,
+        method: ''
+      }
+    ])
+  );
+}
+
+function productsToGroups(products) {
+  const map = new Map();
+  for (const product of products) {
+    const publicProduct = toPublicProduct(product);
+    if (!map.has(publicProduct.name)) {
+      map.set(publicProduct.name, {
+        name: publicProduct.name,
+        variants: emptyVariants(),
+        isRecommended: false,
+        hotScore: 0,
+        updatedAt: publicProduct.updatedAt,
+        createdAt: publicProduct.createdAt
+      });
+    }
+    const group = map.get(publicProduct.name);
+    const key = makeVariantKey(publicProduct.cupType, publicProduct.temperature);
+    group.variants[key] = {
+      id: publicProduct.id,
+      enabled: true,
+      cupType: publicProduct.cupType,
+      temperature: publicProduct.temperature,
+      method: publicProduct.method,
+      isRecommended: publicProduct.isRecommended,
+      hotScore: publicProduct.hotScore
+    };
+    group.isRecommended = group.isRecommended || publicProduct.isRecommended;
+    group.hotScore = Math.max(group.hotScore, publicProduct.hotScore);
+    if (!group.updatedAt || new Date(publicProduct.updatedAt) > new Date(group.updatedAt)) group.updatedAt = publicProduct.updatedAt;
+  }
+  return [...map.values()].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+}
+
+function validateProductGroupInput(input) {
+  const name = String(input.name || '').trim();
+  const errors = [];
+  if (!name) errors.push('品名不能为空');
+  const variants = input.variants || {};
+  const normalized = [];
+  for (const variant of VARIANT_KEYS) {
+    const current = variants[variant.key] || {};
+    const enabled = Boolean(current.enabled);
+    const method = String(current.method || '').trim();
+    if (enabled && !method) errors.push(`${variant.label} 的制作方法不能为空`);
+    if (enabled) {
+      const hotScore = Number(current.hotScore || 0);
+      if (!Number.isFinite(hotScore) || hotScore < 0) errors.push(`${variant.label} 的热度值必须是非负数字`);
+      normalized.push({
+        id: current.id || '',
+        name,
+        cupType: variant.cupType,
+        temperature: variant.temperature,
+        method,
+        isRecommended: Boolean(current.isRecommended),
+        hotScore: Math.round(hotScore)
+      });
+    }
+  }
+  if (normalized.length === 0) errors.push('至少启用一个规格');
+  return {
+    data: {
+      name,
+      previousName: String(input.previousName || input.name || '').trim(),
+      variants: normalized
+    },
+    errors
+  };
+}
+
 class JsonProductStore {
   constructor(filePath) {
     this.filePath = filePath || path.join(__dirname, '..', 'data', 'products.json');
@@ -160,6 +255,16 @@ class JsonProductStore {
     };
   }
 
+  async listGroups({ keyword = '', page = 1, pageSize = 20 } = {}) {
+    const q = normalizeKeyword(keyword);
+    const filtered = productsToGroups(this.products).filter((item) => !q || item.name.toLowerCase().includes(q));
+    const start = (Math.max(page, 1) - 1) * pageSize;
+    return {
+      total: filtered.length,
+      items: filtered.slice(start, start + pageSize)
+    };
+  }
+
   async search(keyword) {
     const q = normalizeKeyword(keyword);
     if (!q) return null;
@@ -220,6 +325,53 @@ class JsonProductStore {
   async delete(id) {
     const before = this.products.length;
     this.products = this.products.filter((item) => item.id !== id);
+    if (this.products.length === before) {
+      const error = new Error('产品不存在');
+      error.status = 404;
+      throw error;
+    }
+    await this.save();
+    return true;
+  }
+
+  async saveGroup(input) {
+    const { data, errors } = validateProductGroupInput(input);
+    if (errors.length) {
+      const error = new Error(errors.join('；'));
+      error.status = 400;
+      throw error;
+    }
+    const stamp = nowIso();
+    const existingByKey = new Map(
+      this.products
+        .filter((item) => item.name === data.previousName || item.name === data.name)
+        .map((item) => [makeVariantKey(item.cupType, item.temperature), item])
+    );
+    const nextProducts = this.products.filter((item) => item.name !== data.previousName && item.name !== data.name);
+    for (const variant of data.variants) {
+      const key = makeVariantKey(variant.cupType, variant.temperature);
+      const existing = existingByKey.get(key);
+      nextProducts.push({
+        id: existing?.id || variant.id || makeId(),
+        name: data.name,
+        cupType: variant.cupType,
+        temperature: variant.temperature,
+        method: variant.method,
+        isRecommended: variant.isRecommended,
+        hotScore: variant.hotScore,
+        createdAt: existing?.createdAt || stamp,
+        updatedAt: stamp
+      });
+    }
+    this.products = nextProducts;
+    await this.save();
+    const groups = await this.listGroups({ keyword: data.name, page: 1, pageSize: 1 });
+    return groups.items[0];
+  }
+
+  async deleteGroup(name) {
+    const before = this.products.length;
+    this.products = this.products.filter((item) => item.name !== name);
     if (this.products.length === before) {
       const error = new Error('产品不存在');
       error.status = 404;
@@ -329,6 +481,30 @@ class MySqlProductStore {
     return { total, items: rows.map((row) => this.rowToProduct(row)) };
   }
 
+  async listGroups({ keyword = '', page = 1, pageSize = 20 } = {}) {
+    const offset = (Math.max(page, 1) - 1) * pageSize;
+    const hasKeyword = String(keyword || '').trim().length > 0;
+    const params = hasKeyword ? [`%${String(keyword || '').trim()}%`] : [];
+    const where = hasKeyword ? 'WHERE name LIKE ?' : '';
+    const [[{ total }]] = await this.pool.execute(`SELECT COUNT(DISTINCT name) AS total FROM products ${where}`, params);
+    const [nameRows] = await this.pool.execute(
+      `SELECT name, MAX(updatedAt) AS updatedAt
+       FROM products
+       ${where}
+       GROUP BY name
+       ORDER BY updatedAt DESC
+       LIMIT ? OFFSET ?`,
+      [...params, Number(pageSize), Number(offset)]
+    );
+    if (nameRows.length === 0) return { total, items: [] };
+    const names = nameRows.map((row) => row.name);
+    const placeholders = names.map(() => '?').join(',');
+    const [rows] = await this.pool.execute(`SELECT * FROM products WHERE name IN (${placeholders})`, names);
+    const groups = productsToGroups(rows.map((row) => this.rowToProduct(row)));
+    groups.sort((a, b) => names.indexOf(a.name) - names.indexOf(b.name));
+    return { total, items: groups };
+  }
+
   async search(keyword) {
     const trimmed = String(keyword || '').trim();
     if (!trimmed) return null;
@@ -405,6 +581,66 @@ class MySqlProductStore {
 
   async delete(id) {
     const [result] = await this.pool.execute('DELETE FROM products WHERE id = ?', [id]);
+    if (result.affectedRows === 0) {
+      const error = new Error('产品不存在');
+      error.status = 404;
+      throw error;
+    }
+    return true;
+  }
+
+  async saveGroup(input) {
+    const { data, errors } = validateProductGroupInput(input);
+    if (errors.length) {
+      const error = new Error(errors.join('；'));
+      error.status = 400;
+      throw error;
+    }
+    const conn = await this.pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const names = [...new Set([data.previousName, data.name].filter(Boolean))];
+      const placeholders = names.map(() => '?').join(',');
+      const [existingRows] = names.length
+        ? await conn.execute(`SELECT * FROM products WHERE name IN (${placeholders})`, names)
+        : [[]];
+      const existingByKey = new Map(existingRows.map((row) => [makeVariantKey(row.cupType, row.temperature), this.rowToProduct(row)]));
+      if (names.length) {
+        await conn.execute(`DELETE FROM products WHERE name IN (${placeholders})`, names);
+      }
+      const stamp = nowIso().slice(0, 19).replace('T', ' ');
+      for (const variant of data.variants) {
+        const key = makeVariantKey(variant.cupType, variant.temperature);
+        const existing = existingByKey.get(key);
+        await conn.execute(
+          `INSERT INTO products (id, name, cupType, temperature, method, isRecommended, hotScore, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            existing?.id || variant.id || makeId(),
+            data.name,
+            variant.cupType,
+            variant.temperature,
+            variant.method,
+            variant.isRecommended ? 1 : 0,
+            variant.hotScore,
+            existing?.createdAt ? String(existing.createdAt).slice(0, 19).replace('T', ' ') : stamp,
+            stamp
+          ]
+        );
+      }
+      await conn.commit();
+      const groups = await this.listGroups({ keyword: data.name, page: 1, pageSize: 1 });
+      return groups.items[0];
+    } catch (error) {
+      await conn.rollback();
+      throw error;
+    } finally {
+      conn.release();
+    }
+  }
+
+  async deleteGroup(name) {
+    const [result] = await this.pool.execute('DELETE FROM products WHERE name = ?', [name]);
     if (result.affectedRows === 0) {
       const error = new Error('产品不存在');
       error.status = 404;
