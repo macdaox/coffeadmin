@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>咖啡 SOP 后台管理</title>
+    <link rel="stylesheet" href="/admin.css" />
+  </head>
+  <body>
+    <main id="loginView" class="login-shell">
+      <form id="loginForm" class="login-card">
+        <h1>后台登录</h1>
+        <p>登录后维护咖啡 SOP 产品数据</p>
+        <label>
+          用户名
+          <input id="usernameInput" autocomplete="username" required placeholder="请输入用户名" />
+        </label>
+        <label>
+          密码
+          <input id="passwordInput" type="password" autocomplete="current-password" required placeholder="请输入密码" />
+        </label>
+        <button type="submit" class="primary">登录</button>
+      </form>
+    </main>
+
+    <main id="adminView" class="shell hidden">
+      <section class="toolbar">
+        <div>
+          <h1>咖啡 SOP 后台管理</h1>
+          <p>维护产品、推荐状态和热度值</p>
+        </div>
+        <div class="actions">
+          <input id="keywordInput" type="search" placeholder="搜索产品" />
+          <button id="searchBtn">搜索</button>
+          <button id="newBtn" class="primary">新增产品</button>
+          <button id="logoutBtn">退出</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <table>
+          <thead>
+            <tr>
+              <th>品名</th>
+              <th>杯型</th>
+              <th>温度</th>
+              <th>推荐</th>
+              <th>热度</th>
+              <th>更新时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="productBody"></tbody>
+        </table>
+        <div id="emptyState" class="empty">暂无产品</div>
+      </section>
+    </main>
+
+    <dialog id="editorDialog">
+      <form id="productForm" method="dialog">
+        <header>
+          <h2 id="dialogTitle">新增产品</h2>
+          <button type="button" id="closeBtn" class="ghost">关闭</button>
+        </header>
+        <input type="hidden" id="idInput" />
+        <label>
+          品名
+          <input id="nameInput" required placeholder="例如：冰拿铁" />
+        </label>
+        <div class="row">
+          <label>
+            杯型
+            <select id="cupTypeInput">
+              <option>标准杯</option>
+              <option>吨吨桶</option>
+            </select>
+          </label>
+          <label>
+            温度
+            <select id="temperatureInput">
+              <option>冷</option>
+              <option>热</option>
+            </select>
+          </label>
+        </div>
+        <label>
+          制作方法
+          <textarea id="methodInput" required rows="7" placeholder="1. 加冰&#10;2. 加牛奶 30ml"></textarea>
+        </label>
+        <div class="row">
+          <label class="check">
+            <input id="isRecommendedInput" type="checkbox" />
+            设为推荐
+          </label>
+          <label>
+            热度值
+            <input id="hotScoreInput" type="number" min="0" step="1" value="0" />
+          </label>
+        </div>
+        <footer>
+          <button type="submit" class="primary">保存</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <div id="toast"></div>
+    <script src="/admin.js"></script>
+  </body>
+</html>
