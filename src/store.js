@@ -933,15 +933,15 @@ class MySqlProductStore {
 }
 
 function shouldUseMysql() {
-  return Boolean(process.env.MYSQL_HOST && process.env.MYSQL_USER && process.env.MYSQL_DATABASE);
+  return Boolean(process.env.MYSQL_ADDRESS && process.env.MYSQL_USERNAME && process.env.MYSQL_DATABASE);
 }
 
 function createStore() {
   if (shouldUseMysql()) {
     return new MySqlProductStore({
-      host: process.env.MYSQL_HOST,
+      host: process.env.MYSQL_ADDRESS,
       port: process.env.MYSQL_PORT,
-      user: process.env.MYSQL_USER,
+      user: process.env.MYSQL_USERNAME,
       password: process.env.MYSQL_PASSWORD || '',
       database: process.env.MYSQL_DATABASE
     });
