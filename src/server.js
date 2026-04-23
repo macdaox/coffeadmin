@@ -177,6 +177,25 @@ app.get('/api/user/session', (req, res) => {
   });
 });
 
+app.get('/api/user/profile', requireAppUser, async (req, res, next) => {
+  try {
+    const user = await store.getAppUserById(req.appUser.id);
+    if (!user) return fail(res, 404, '用户不存在');
+    ok(res, user);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put('/api/user/profile', requireAppUser, async (req, res, next) => {
+  try {
+    const user = await store.updateOwnAppUser(req.appUser.id, req.body || {});
+    ok(res, { user, token: createAppToken(user) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/product/search', requireAppUser, async (req, res, next) => {
   try {
     const keyword = String(req.body.keyword || '').trim();

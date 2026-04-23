@@ -609,6 +609,63 @@ class JsonProductStore {
     if (!user || !user.isActive || !verifyPassword(password, user.passwordHash)) return null;
     return toPublicAppUser(user);
   }
+
+  async getAppUserById(id) {
+    const user = this.appUsers.find((item) => item.id === id);
+    return user ? toPublicAppUser(user) : null;
+  }
+
+  async updateOwnAppUser(id, input) {
+    const index = this.appUsers.findIndex((item) => item.id === id);
+    if (index < 0) {
+      const error = new Error('用户不存在');
+      error.status = 404;
+      throw error;
+    }
+
+    const currentPassword = String(input.currentPassword || '');
+    if (!currentPassword || !verifyPassword(currentPassword, this.appUsers[index].passwordHash)) {
+      const error = new Error('当前密码错误');
+      error.status = 400;
+      throw error;
+    }
+
+    const { data, errors } = validateAppUserInput(
+      {
+        username: input.username,
+        password: input.password
+      },
+      true
+    );
+    if (errors.length) {
+      const error = new Error(errors.join('；'));
+      error.status = 400;
+      throw error;
+    }
+    if (!data.username && !data.password) {
+      const error = new Error('请至少修改账号或密码');
+      error.status = 400;
+      throw error;
+    }
+    if (data.username && this.appUsers.some((item) => item.id !== id && item.username === data.username)) {
+      const error = new Error('账号已存在');
+      error.status = 409;
+      throw error;
+    }
+
+    const next = {
+      ...this.appUsers[index],
+      updatedAt: nowIso()
+    };
+    if (data.username) {
+      next.username = data.username;
+      next.displayName = data.username;
+    }
+    if (data.password) next.passwordHash = makePasswordHash(data.password);
+    this.appUsers[index] = next;
+    await this.saveAppUsers();
+    return toPublicAppUser(next);
+  }
 }
 
 class MySqlProductStore {
@@ -1006,6 +1063,68 @@ class MySqlProductStore {
     const user = rows[0];
     if (!user || !user.isActive || !verifyPassword(password, user.passwordHash)) return null;
     return this.rowToAppUser(user);
+  }
+
+  async getAppUserById(id) {
+    const [rows] = await this.pool.execute('SELECT * FROM app_users WHERE id = ? LIMIT 1', [id]);
+    return rows[0] ? this.rowToAppUser(rows[0]) : null;
+  }
+
+  async updateOwnAppUser(id, input) {
+    const [rows] = await this.pool.execute('SELECT * FROM app_users WHERE id = ? LIMIT 1', [id]);
+    const current = rows[0];
+    if (!current) {
+      const error = new Error('用户不存在');
+      error.status = 404;
+      throw error;
+    }
+
+    const currentPassword = String(input.currentPassword || '');
+    if (!currentPassword || !verifyPassword(currentPassword, current.passwordHash)) {
+      const error = new Error('当前密码错误');
+      error.status = 400;
+      throw error;
+    }
+
+    const { data, errors } = validateAppUserInput(
+      {
+        username: input.username,
+        password: input.password
+      },
+      true
+    );
+    if (errors.length) {
+      const error = new Error(errors.join('；'));
+      error.status = 400;
+      throw error;
+    }
+    if (!data.username && !data.password) {
+      const error = new Error('请至少修改账号或密码');
+      error.status = 400;
+      throw error;
+    }
+
+    const next = {
+      username: data.username || current.username,
+      displayName: data.username || current.displayName,
+      passwordHash: data.password ? makePasswordHash(data.password) : current.passwordHash,
+      updatedAt: nowIso().slice(0, 19).replace('T', ' ')
+    };
+    try {
+      await this.pool.execute(
+        `UPDATE app_users
+         SET username = ?, displayName = ?, passwordHash = ?, updatedAt = ?
+         WHERE id = ?`,
+        [next.username, next.displayName, next.passwordHash, next.updatedAt, id]
+      );
+    } catch (error) {
+      if (error.code === 'ER_DUP_ENTRY') {
+        error.status = 409;
+        error.message = '账号已存在';
+      }
+      throw error;
+    }
+    return this.getAppUserById(id);
   }
 }
 
