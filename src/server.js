@@ -232,6 +232,21 @@ app.get('/api/product/recommend', requireAppUser, async (req, res, next) => {
   }
 });
 
+app.get('/api/product/catalog', requireAppUser, async (req, res, next) => {
+  try {
+    const page = Math.max(Number(req.query.page || 1), 1);
+    const pageSize = Math.min(Math.max(Number(req.query.pageSize || 200), 1), 500);
+    const result = await store.listGroups({
+      keyword: req.query.keyword || '',
+      page,
+      pageSize
+    });
+    ok(res, result.items, { total: result.total, page, pageSize });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/asr/recognize', requireAppUser, async (req, res, next) => {
   try {
     const audioBase64 = String(req.body.audio || '').trim();
