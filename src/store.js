@@ -19,6 +19,86 @@ function normalizeKeyword(keyword) {
   return String(keyword || '').trim().toLowerCase();
 }
 
+function normalizeSearchText(text) {
+  return String(text || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\-_/()（）·,，.。]/g, '');
+}
+
+const SEARCH_ALIASES = {
+  cupType: {
+    标准杯: ['标准杯', '标准', '中杯'],
+    吨吨桶: ['吨吨桶', '吨吨', '桶', '大桶']
+  },
+  temperature: {
+    冷: ['冷', '冰', '冰饮'],
+    热: ['热', '热饮']
+  }
+};
+
+function getAliases(group, value) {
+  return SEARCH_ALIASES[group]?.[value] || [value];
+}
+
+function buildProductSearchTerms(product) {
+  const name = normalizeSearchText(product.name);
+  const cupAliases = getAliases('cupType', product.cupType).map(normalizeSearchText);
+  const tempAliases = getAliases('temperature', product.temperature).map(normalizeSearchText);
+  const terms = new Set([name]);
+
+  for (const cup of cupAliases) {
+    for (const temp of tempAliases) {
+      terms.add(`${name}${cup}${temp}`);
+      terms.add(`${name}${temp}${cup}`);
+      terms.add(`${cup}${name}${temp}`);
+      terms.add(`${temp}${name}${cup}`);
+      terms.add(`${name}${cup}`);
+      terms.add(`${name}${temp}`);
+    }
+  }
+
+  return [...terms].filter(Boolean);
+}
+
+function scoreProductMatch(product, keyword) {
+  const query = normalizeSearchText(keyword);
+  if (!query) return -1;
+
+  const name = normalizeSearchText(product.name);
+  const cupAliases = getAliases('cupType', product.cupType).map(normalizeSearchText);
+  const tempAliases = getAliases('temperature', product.temperature).map(normalizeSearchText);
+  const terms = buildProductSearchTerms(product);
+
+  if (terms.includes(query)) return 1000;
+
+  let score = -1;
+  if (query.includes(name)) score += 400;
+  if (name.includes(query)) score += 250;
+  if (cupAliases.some((alias) => alias && query.includes(alias))) score += 180;
+  if (tempAliases.some((alias) => alias && query.includes(alias))) score += 140;
+
+  for (const term of terms) {
+    if (term.includes(query)) score = Math.max(score, 700 - (term.length - query.length));
+    if (query.includes(term)) score = Math.max(score, 820 - (query.length - term.length));
+  }
+
+  return score;
+}
+
+function findBestMatchingProduct(products, keyword) {
+  return products
+    .map((product) => ({ product, score: scoreProductMatch(product, keyword) }))
+    .filter((item) => item.score >= 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (Number(b.product.hotScore || 0) !== Number(a.product.hotScore || 0)) {
+        return Number(b.product.hotScore || 0) - Number(a.product.hotScore || 0);
+      }
+      return new Date(b.product.updatedAt || 0) - new Date(a.product.updatedAt || 0);
+    })[0]?.product || null;
+}
+
 function pbkdf2(password, salt) {
   return crypto.pbkdf2Sync(String(password), salt, 120000, 32, 'sha256').toString('hex');
 }
@@ -326,12 +406,7 @@ class JsonProductStore {
   }
 
   async search(keyword) {
-    const q = normalizeKeyword(keyword);
-    if (!q) return null;
-    const exact = this.products.find((item) => item.name.toLowerCase() === q);
-    if (exact) return toPublicProduct(exact);
-    const fuzzy = this.products.find((item) => item.name.toLowerCase().includes(q));
-    return toPublicProduct(fuzzy);
+    return toPublicProduct(findBestMatchingProduct(this.products, keyword));
   }
 
   async recommend(limit = 8) {
@@ -681,10 +756,12 @@ class MySqlProductStore {
   async search(keyword) {
     const trimmed = String(keyword || '').trim();
     if (!trimmed) return null;
-    const [exactRows] = await this.pool.execute('SELECT * FROM products WHERE LOWER(name) = LOWER(?) LIMIT 1', [trimmed]);
-    if (exactRows[0]) return this.rowToProduct(exactRows[0]);
-    const [fuzzyRows] = await this.pool.execute('SELECT * FROM products WHERE LOWER(name) LIKE LOWER(?) ORDER BY hotScore DESC LIMIT 1', [`%${trimmed}%`]);
-    return fuzzyRows[0] ? this.rowToProduct(fuzzyRows[0]) : null;
+    const [rows] = await this.pool.execute(
+      `SELECT * FROM products
+       ORDER BY hotScore DESC, updatedAt DESC
+       LIMIT 500`
+    );
+    return findBestMatchingProduct(rows.map((row) => this.rowToProduct(row)), trimmed);
   }
 
   async recommend(limit = 8) {
