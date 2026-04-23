@@ -3,12 +3,13 @@ const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
 const { createStore } = require('./store');
+const { recognizeSentence } = require('./asr');
 
 const app = express();
 const store = createStore();
 
 app.use(cors());
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '8mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const sessionSecret = process.env.SESSION_SECRET || process.env.ADMIN_PASSWORD || 'local-dev-session-secret';
@@ -218,6 +219,28 @@ app.get('/api/product/recommend', requireAppUser, async (req, res, next) => {
   try {
     const limit = Math.min(Number(req.query.limit || 8), 20);
     ok(res, await store.recommend(limit));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/asr/recognize', requireAppUser, async (req, res, next) => {
+  try {
+    const audioBase64 = String(req.body.audio || '').trim();
+    const voiceFormat = String(req.body.format || 'mp3').trim().toLowerCase();
+    const audioByteLength = Number(req.body.byteLength || 0);
+
+    if (!audioBase64) return fail(res, 400, '缺少语音数据');
+    if (!audioByteLength || audioByteLength <= 0) return fail(res, 400, '缺少语音长度');
+
+    const result = await recognizeSentence({
+      audioBase64,
+      audioByteLength,
+      voiceFormat
+    });
+
+    if (!result.text) return fail(res, 422, '未识别到清晰语音，请重试');
+    ok(res, { text: result.text });
   } catch (error) {
     next(error);
   }

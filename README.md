@@ -14,10 +14,17 @@ MYSQL_PORT=可选，若 MYSQL_ADDRESS 已带端口可不填
 MYSQL_USERNAME=MySQL 用户名
 MYSQL_PASSWORD=MySQL 密码
 MYSQL_DATABASE=MySQL 数据库名
+TENCENT_SECRET_ID=腾讯云 API SecretId（用于 ASR）
+TENCENT_SECRET_KEY=腾讯云 API SecretKey（用于 ASR）
+TENCENTCLOUD_REGION=可选，默认 ap-guangzhou
+ASR_ENGINE_MODEL_TYPE=可选，默认 16k_zh
+ASR_VOICE_FORMAT=可选，默认 mp3
 DATA_FILE=本地 JSON 数据文件路径，可选
 ```
 
 未配置 MySQL 时，服务使用 JSON 文件保存数据，方便本地开发。本地默认后台账号是 `admin / admin123456`。部署到微信云托管时请配置 `MYSQL_ADDRESS`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`、`MYSQL_DATABASE` 以及 `ADMIN_USERNAME`、`ADMIN_PASSWORD`，产品数据和后台账号都会写入 MySQL。
+
+若要启用小程序语音查询，请额外配置 `TENCENT_SECRET_ID`、`TENCENT_SECRET_KEY`。当前实现使用小程序原生录音 + 云托管后端调用腾讯云一句话识别接口，避免在小程序端暴露密钥。
 
 ## 产品维护方式
 

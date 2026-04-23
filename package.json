@@ -10,7 +10,8 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "mysql2": "^3.11.5"
+    "mysql2": "^3.11.5",
+    "tencentcloud-sdk-nodejs": "^4.1.220"
   },
   "engines": {
     "node": ">=18"
