@@ -936,15 +936,30 @@ function shouldUseMysql() {
   return Boolean(process.env.MYSQL_ADDRESS && process.env.MYSQL_USERNAME && process.env.MYSQL_DATABASE);
 }
 
+function resolveMysqlConfig() {
+  const address = String(process.env.MYSQL_ADDRESS || '').trim();
+  const explicitPort = String(process.env.MYSQL_PORT || '').trim();
+  let host = address;
+  let port = explicitPort;
+
+  if (address.includes(':')) {
+    const [parsedHost, parsedPort] = address.split(':');
+    host = parsedHost.trim();
+    if (!port && parsedPort) port = parsedPort.trim();
+  }
+
+  return {
+    host,
+    port: Number(port || 3306),
+    user: String(process.env.MYSQL_USERNAME || '').trim(),
+    password: process.env.MYSQL_PASSWORD || '',
+    database: String(process.env.MYSQL_DATABASE || '').trim()
+  };
+}
+
 function createStore() {
   if (shouldUseMysql()) {
-    return new MySqlProductStore({
-      host: process.env.MYSQL_ADDRESS,
-      port: process.env.MYSQL_PORT,
-      user: process.env.MYSQL_USERNAME,
-      password: process.env.MYSQL_PASSWORD || '',
-      database: process.env.MYSQL_DATABASE
-    });
+    return new MySqlProductStore(resolveMysqlConfig());
   }
   return new JsonProductStore(process.env.DATA_FILE);
 }
