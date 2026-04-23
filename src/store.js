@@ -313,9 +313,13 @@ class JsonProductStore {
     this.filePath = filePath || path.join(__dirname, '..', 'data', 'products.json');
     this.adminFilePath = path.join(path.dirname(this.filePath), 'admin-users.json');
     this.appUserFilePath = path.join(path.dirname(this.filePath), 'app-users.json');
+    this.appSettingsFilePath = path.join(path.dirname(this.filePath), 'app-settings.json');
     this.products = [];
     this.adminUsers = [];
     this.appUsers = [];
+    this.appSettings = {
+      logoUrl: ''
+    };
   }
 
   async init() {
@@ -334,6 +338,7 @@ class JsonProductStore {
     }
     await this.initAdminUsers();
     await this.initAppUsers();
+    await this.initAppSettings();
   }
 
   async save() {
@@ -346,6 +351,10 @@ class JsonProductStore {
 
   async saveAppUsers() {
     await fs.writeFile(this.appUserFilePath, JSON.stringify(this.appUsers, null, 2));
+  }
+
+  async saveAppSettings() {
+    await fs.writeFile(this.appSettingsFilePath, JSON.stringify(this.appSettings, null, 2));
   }
 
   async initAdminUsers() {
@@ -380,6 +389,19 @@ class JsonProductStore {
     } catch (error) {
       this.appUsers = [];
       await this.saveAppUsers();
+    }
+  }
+
+  async initAppSettings() {
+    try {
+      const raw = await fs.readFile(this.appSettingsFilePath, 'utf8');
+      this.appSettings = {
+        logoUrl: '',
+        ...JSON.parse(raw)
+      };
+    } catch (error) {
+      this.appSettings = { logoUrl: '' };
+      await this.saveAppSettings();
     }
   }
 
@@ -666,6 +688,21 @@ class JsonProductStore {
     await this.saveAppUsers();
     return toPublicAppUser(next);
   }
+
+  async getAppSettings() {
+    return {
+      logoUrl: String(this.appSettings.logoUrl || '').trim()
+    };
+  }
+
+  async updateAppSettings(input) {
+    this.appSettings = {
+      ...this.appSettings,
+      logoUrl: String(input.logoUrl || '').trim()
+    };
+    await this.saveAppSettings();
+    return this.getAppSettings();
+  }
 }
 
 class MySqlProductStore {
@@ -707,6 +744,7 @@ class MySqlProductStore {
     }
     await this.initAdminUsers();
     await this.initAppUsers();
+    await this.initAppSettings();
   }
 
   async initAdminUsers() {
@@ -751,6 +789,22 @@ class MySqlProductStore {
         INDEX idx_app_users_updated (updatedAt)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+  }
+
+  async initAppSettings() {
+    await this.pool.execute(`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        settingKey VARCHAR(64) PRIMARY KEY,
+        settingValue TEXT NOT NULL,
+        updatedAt DATETIME NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    await this.pool.execute(
+      `INSERT IGNORE INTO app_settings (settingKey, settingValue, updatedAt)
+       VALUES ('logoUrl', '', ?)`,
+      [nowIso().slice(0, 19).replace('T', ' ')]
+    );
   }
 
   rowToAppUser(row) {
@@ -1125,6 +1179,24 @@ class MySqlProductStore {
       throw error;
     }
     return this.getAppUserById(id);
+  }
+
+  async getAppSettings() {
+    const [rows] = await this.pool.execute(`SELECT settingValue FROM app_settings WHERE settingKey = 'logoUrl' LIMIT 1`);
+    return {
+      logoUrl: String(rows[0]?.settingValue || '').trim()
+    };
+  }
+
+  async updateAppSettings(input) {
+    const logoUrl = String(input.logoUrl || '').trim();
+    await this.pool.execute(
+      `UPDATE app_settings
+       SET settingValue = ?, updatedAt = ?
+       WHERE settingKey = 'logoUrl'`,
+      [logoUrl, nowIso().slice(0, 19).replace('T', ' ')]
+    );
+    return this.getAppSettings();
   }
 }
 

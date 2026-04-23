@@ -188,6 +188,14 @@ app.get('/api/user/profile', requireAppUser, async (req, res, next) => {
   }
 });
 
+app.get('/api/app/settings', async (req, res, next) => {
+  try {
+    ok(res, await store.getAppSettings());
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.put('/api/user/profile', requireAppUser, async (req, res, next) => {
   try {
     const user = await store.updateOwnAppUser(req.appUser.id, req.body || {});
@@ -327,6 +335,22 @@ app.delete('/api/admin/app-user/delete', requireAdmin, async (req, res, next) =>
     if (!id) return fail(res, 400, '缺少用户 ID');
     await store.deleteAppUser(id);
     ok(res, true);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/app-settings', requireAdmin, async (req, res, next) => {
+  try {
+    ok(res, await store.getAppSettings());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put('/api/admin/app-settings', requireAdmin, async (req, res, next) => {
+  try {
+    ok(res, await store.updateAppSettings(req.body || {}));
   } catch (error) {
     next(error);
   }

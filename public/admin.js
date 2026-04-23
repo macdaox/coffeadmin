@@ -18,6 +18,8 @@ const closeBtn = document.querySelector('#closeBtn');
 const userDialog = document.querySelector('#userDialog');
 const userForm = document.querySelector('#userForm');
 const userCloseBtn = document.querySelector('#userCloseBtn');
+const settingsForm = document.querySelector('#settingsForm');
+const logoUrlInput = document.querySelector('#logoUrlInput');
 const toastEl = document.querySelector('#toast');
 
 const fields = {
@@ -143,6 +145,11 @@ async function loadAppUsers() {
   renderUsers();
 }
 
+async function loadSettings() {
+  const json = await request('/api/admin/app-settings');
+  logoUrlInput.value = json.data.logoUrl || '';
+}
+
 function openEditor(product) {
   document.querySelector('#dialogTitle').textContent = product ? '编辑产品' : '新增产品';
   fields.id.value = product?.id || '';
@@ -235,7 +242,7 @@ loginForm.addEventListener('submit', async (event) => {
     });
     passwordInput.value = '';
     showAdmin();
-    await Promise.all([loadProducts(), loadAppUsers()]);
+    await Promise.all([loadProducts(), loadAppUsers(), loadSettings()]);
   } catch (error) {
     toast(error.message);
   }
@@ -333,11 +340,26 @@ userForm.addEventListener('submit', async (event) => {
   }
 });
 
+settingsForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    await request('/api/admin/app-settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        logoUrl: logoUrlInput.value.trim()
+      })
+    });
+    toast('设置已保存');
+  } catch (error) {
+    toast(error.message);
+  }
+});
+
 async function bootstrap() {
   try {
     await request('/api/admin/session');
     showAdmin();
-    await Promise.all([loadProducts(), loadAppUsers()]);
+    await Promise.all([loadProducts(), loadAppUsers(), loadSettings()]);
   } catch (error) {
     showLogin();
   }

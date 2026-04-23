@@ -126,6 +126,16 @@ textarea {
   margin-top: 18px;
 }
 
+.settings-form {
+  padding: 18px;
+}
+
+.settings-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .panel-title {
   display: flex;
   justify-content: space-between;

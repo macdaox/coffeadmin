@@ -78,6 +78,24 @@
         </table>
         <div id="userEmptyState" class="empty">暂无小程序用户</div>
       </section>
+
+      <section class="panel settings-panel">
+        <div class="panel-title">
+          <div>
+            <h2>小程序设置</h2>
+            <p>可配置首页、常识页、个人中心显示的 Logo 地址</p>
+          </div>
+        </div>
+        <form id="settingsForm" class="settings-form">
+          <label>
+            Logo URL
+            <input id="logoUrlInput" type="url" placeholder="https://example.com/logo.gif 或 logo.svg" />
+          </label>
+          <div class="settings-actions">
+            <button type="submit" class="primary">保存设置</button>
+          </div>
+        </form>
+      </section>
     </main>
 
     <dialog id="editorDialog">
