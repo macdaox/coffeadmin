@@ -212,9 +212,9 @@ function validateProductInput(input, partial = false) {
 }
 
 const VARIANT_KEYS = [
-  { key: 'standardCold', cupType: '标准杯', temperature: '冷', label: '标准杯（冷）' },
+  { key: 'standardCold', cupType: '标准杯', temperature: '冷', label: '标准杯（冰）' },
   { key: 'standardHot', cupType: '标准杯', temperature: '热', label: '标准杯（热）' },
-  { key: 'bucketCold', cupType: '吨吨桶', temperature: '冷', label: '吨吨桶（冷）' },
+  { key: 'bucketCold', cupType: '吨吨桶', temperature: '冷', label: '吨吨桶（冰）' },
   { key: 'bucketHot', cupType: '吨吨桶', temperature: '热', label: '吨吨桶（热）' }
 ];
 

@@ -112,9 +112,9 @@ function renderUsers() {
 
 function renderVariantBadges(variants = {}) {
   const labels = {
-    standardCold: '标准杯冷',
+    standardCold: '标准杯冰',
     standardHot: '标准杯热',
-    bucketCold: '吨吨桶冷',
+    bucketCold: '吨吨桶冰',
     bucketHot: '吨吨桶热'
   };
   const enabled = variantKeys.filter((key) => variants[key]?.enabled);
