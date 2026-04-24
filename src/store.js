@@ -794,7 +794,6 @@ class JsonProductStore {
     };
     if (data.username) {
       next.username = data.username;
-      next.displayName = data.username;
     }
     if (data.password) next.passwordHash = makePasswordHash(data.password);
     this.appUsers[index] = next;
@@ -1438,7 +1437,7 @@ class MySqlProductStore {
 
     const next = {
       username: data.username || current.username,
-      displayName: data.username || current.displayName,
+      displayName: current.displayName,
       passwordHash: data.password ? makePasswordHash(data.password) : current.passwordHash,
       updatedAt: nowIso().slice(0, 19).replace('T', ' ')
     };
