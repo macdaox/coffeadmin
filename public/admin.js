@@ -24,12 +24,14 @@ const refreshGlossaryBtn = document.querySelector('#refreshGlossaryBtn');
 const glossaryTotalEl = document.querySelector('#glossaryTotal');
 const glossaryTopListEl = document.querySelector('#glossaryTopList');
 const glossaryRecentListEl = document.querySelector('#glossaryRecentList');
+const navLinks = [...document.querySelectorAll('.nav-link')];
 const toastEl = document.querySelector('#toast');
 
 const fields = {
   id: document.querySelector('#idInput'),
   previousName: document.querySelector('#previousNameInput'),
-  name: document.querySelector('#nameInput')
+  name: document.querySelector('#nameInput'),
+  category: document.querySelector('#categoryInput')
 };
 
 const variantKeys = ['standardCold', 'standardHot', 'bucketCold', 'bucketHot'];
@@ -123,7 +125,12 @@ function render() {
     .map(
       (item) => `
         <tr>
-          <td>${escapeHtml(item.name)}</td>
+          <td>
+            <div class="product-name">
+              <span>${escapeHtml(item.name)}</span>
+              ${item.category ? `<span class="category-badge">${escapeHtml(item.category)}</span>` : ''}
+            </div>
+          </td>
           <td>${renderVariantBadges(item.variants)}</td>
           <td>${formatTime(item.updatedAt)}</td>
           <td>
@@ -207,6 +214,7 @@ function openEditor(product) {
   fields.id.value = product?.id || '';
   fields.previousName.value = product?.name || '';
   fields.name.value = product?.name || '';
+  fields.category.value = product?.category || '';
   fillVariants(product?.variants);
   dialog.showModal();
 }
@@ -244,8 +252,19 @@ function getPayload() {
     id: fields.id.value,
     previousName: fields.previousName.value,
     name: fields.name.value,
+    category: fields.category.value.trim(),
     variants: readVariants()
   };
+}
+
+function setActiveSection(sectionId) {
+  navLinks.forEach((button) => {
+    const active = button.dataset.section === sectionId;
+    button.classList.toggle('active', active);
+  });
+  document.querySelectorAll('.content-panel').forEach((panel) => {
+    panel.classList.toggle('hidden', panel.id !== sectionId);
+  });
 }
 
 function openUserEditor(user) {
@@ -281,6 +300,9 @@ newBtn.addEventListener('click', () => openEditor());
 closeBtn.addEventListener('click', () => dialog.close());
 newUserBtn.addEventListener('click', () => openUserEditor());
 userCloseBtn.addEventListener('click', () => userDialog.close());
+navLinks.forEach((button) => {
+  button.addEventListener('click', () => setActiveSection(button.dataset.section));
+});
 refreshGlossaryBtn.addEventListener('click', () => {
   loadGlossaryStats().catch((error) => toast(error.message));
 });
@@ -297,6 +319,7 @@ loginForm.addEventListener('submit', async (event) => {
     });
     passwordInput.value = '';
     showAdmin();
+    setActiveSection('productsSection');
     await Promise.all([loadProducts(), loadAppUsers(), loadSettings(), loadGlossaryStats()]);
   } catch (error) {
     toast(error.message);
@@ -414,9 +437,20 @@ async function bootstrap() {
   try {
     await request('/api/admin/session');
     showAdmin();
-    await Promise.all([loadProducts(), loadAppUsers(), loadSettings(), loadGlossaryStats()]);
+    setActiveSection('productsSection');
+    const results = await Promise.allSettled([loadProducts(), loadAppUsers(), loadSettings(), loadGlossaryStats()]);
+    const failed = results.find((item) => item.status === 'rejected');
+    if (failed) {
+      toast(failed.reason?.message || '部分数据加载失败');
+    }
   } catch (error) {
-    showLogin();
+    if (String(error.message || '').includes('请先登录') || String(error.message || '').includes('未登录')) {
+      showLogin();
+      return;
+    }
+    showAdmin();
+    setActiveSection('productsSection');
+    toast(error.message || '后台初始化失败');
   }
 }
 

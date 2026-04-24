@@ -49,6 +49,14 @@ button.ghost {
   padding: 32px 20px;
 }
 
+.admin-layout {
+  max-width: 1360px;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+
 .login-shell {
   min-height: 100vh;
   display: grid;
@@ -78,6 +86,10 @@ button.ghost {
   margin-bottom: 18px;
 }
 
+.toolbar h2 {
+  font-size: 26px;
+}
+
 h1,
 h2,
 p {
@@ -98,6 +110,60 @@ p {
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.sidebar {
+  position: sticky;
+  top: 24px;
+  padding: 20px;
+  border: 1px solid #e0e4dd;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(26, 39, 30, 0.05);
+}
+
+.sidebar-brand h1 {
+  font-size: 24px;
+}
+
+.sidebar-brand p {
+  margin-top: 6px;
+  font-size: 14px;
+}
+
+.sidebar-nav {
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.nav-link {
+  width: 100%;
+  border-radius: 10px;
+  padding: 12px 14px;
+  text-align: left;
+  border-color: #e4e8e0;
+  color: #334039;
+}
+
+.nav-link.active {
+  border-color: #2f6f4e;
+  background: #eff7f1;
+  color: #244d37;
+  font-weight: 700;
+}
+
+.sidebar-logout {
+  width: 100%;
+  margin-top: 22px;
+}
+
+.content-shell {
+  min-width: 0;
+}
+
+.content-panel.hidden {
+  display: none;
 }
 
 input,
@@ -251,6 +317,24 @@ textarea {
 
 .panel-title h2 {
   font-size: 18px;
+}
+
+.product-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.category-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eef5ef;
+  color: #3f674c;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .panel-title p {
@@ -426,6 +510,14 @@ label {
 }
 
 @media (max-width: 760px) {
+  .admin-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
+  }
+
   .toolbar {
     display: block;
   }

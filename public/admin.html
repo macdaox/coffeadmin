@@ -24,103 +24,123 @@
       </form>
     </main>
 
-    <main id="adminView" class="shell hidden">
-      <section class="toolbar">
-        <div>
-          <h1>咖啡 SOP 后台管理</h1>
-          <p>维护产品、推荐状态、热度值和小程序使用权限</p>
+    <main id="adminView" class="shell hidden admin-layout">
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <h1>咖啡 SOP 后台</h1>
+          <p>左边切模块，右边专心维护</p>
         </div>
-        <div class="actions">
-          <input id="keywordInput" type="search" placeholder="搜索产品" />
-          <button id="searchBtn">搜索</button>
-          <button id="newBtn" class="primary">新增产品</button>
-          <button id="logoutBtn">退出</button>
-        </div>
-      </section>
+        <nav class="sidebar-nav">
+          <button type="button" class="nav-link active" data-section="productsSection">产品 SOP</button>
+          <button type="button" class="nav-link" data-section="usersSection">小程序用户</button>
+          <button type="button" class="nav-link" data-section="settingsSection">小程序设置</button>
+          <button type="button" class="nav-link" data-section="glossarySection">“我学会了”统计</button>
+        </nav>
+        <button id="logoutBtn" class="sidebar-logout">退出登录</button>
+      </aside>
 
-      <section class="panel">
-        <div class="panel-title">
-          <h2>产品 SOP</h2>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>品名</th>
-              <th>已配置规格</th>
-              <th>更新时间</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody id="productBody"></tbody>
-        </table>
-        <div id="emptyState" class="empty">暂无产品</div>
-      </section>
+      <section class="content-shell">
+        <section id="productsSection" class="content-panel">
+          <section class="toolbar">
+            <div>
+              <h2>产品 SOP</h2>
+              <p>支持给产品加分类，列表里会直接显示在品名后面</p>
+            </div>
+            <div class="actions">
+              <input id="keywordInput" type="search" placeholder="搜索产品名或分类" />
+              <button id="searchBtn">搜索</button>
+              <button id="newBtn" class="primary">新增产品</button>
+            </div>
+          </section>
 
-      <section class="panel user-panel">
-        <div class="panel-title">
-          <div>
-            <h2>小程序用户</h2>
-            <p>只有这里添加并启用的账号，才能登录小程序查询 SOP</p>
-          </div>
-          <button id="newUserBtn" class="primary">新增用户</button>
-        </div>
-        <table class="user-table">
-          <thead>
-            <tr>
-              <th>账号</th>
-              <th>姓名/备注</th>
-              <th>状态</th>
-              <th>更新时间</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody id="userBody"></tbody>
-        </table>
-        <div id="userEmptyState" class="empty">暂无小程序用户</div>
-      </section>
+          <section class="panel">
+            <table>
+              <thead>
+                <tr>
+                  <th>品名</th>
+                  <th>已配置规格</th>
+                  <th>更新时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="productBody"></tbody>
+            </table>
+            <div id="emptyState" class="empty">暂无产品</div>
+          </section>
+        </section>
 
-      <section class="panel settings-panel">
-        <div class="panel-title">
-          <div>
-            <h2>小程序设置</h2>
-            <p>可配置首页、常识页、个人中心显示的 Logo 地址</p>
-          </div>
-        </div>
-        <form id="settingsForm" class="settings-form">
-          <label>
-            Logo URL
-            <input id="logoUrlInput" type="url" placeholder="https://example.com/logo.gif 或 logo.svg" />
-          </label>
-          <div class="settings-actions">
-            <button type="submit" class="primary">保存设置</button>
-          </div>
-        </form>
-      </section>
+        <section id="usersSection" class="content-panel hidden">
+          <section class="panel user-panel">
+            <div class="panel-title">
+              <div>
+                <h2>小程序用户</h2>
+                <p>只有这里添加并启用的账号，才能登录小程序查询 SOP</p>
+              </div>
+              <button id="newUserBtn" class="primary">新增用户</button>
+            </div>
+            <table class="user-table">
+              <thead>
+                <tr>
+                  <th>账号</th>
+                  <th>姓名/备注</th>
+                  <th>状态</th>
+                  <th>更新时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="userBody"></tbody>
+            </table>
+            <div id="userEmptyState" class="empty">暂无小程序用户</div>
+          </section>
+        </section>
 
-      <section class="panel glossary-panel">
-        <div class="panel-title">
-          <div>
-            <h2>“我学会了”统计</h2>
-            <p>查看首页 SOP 常识按钮的点击情况</p>
-          </div>
-          <button id="refreshGlossaryBtn">刷新</button>
-        </div>
-        <div class="glossary-stats">
-          <div class="stat-card">
-            <span class="stat-label">总点击数</span>
-            <strong id="glossaryTotal">0</strong>
-          </div>
-        </div>
-        <div class="glossary-grid">
-          <div class="glossary-block">
-            <h3>常识点击排行</h3>
-            <div id="glossaryTopList" class="glossary-list empty-inline">暂无数据</div>
-          </div>
-          <div class="glossary-block">
-            <h3>最近点击记录</h3>
-            <div id="glossaryRecentList" class="glossary-list empty-inline">暂无数据</div>
-          </div>
-        </div>
+        <section id="settingsSection" class="content-panel hidden">
+          <section class="panel settings-panel">
+            <div class="panel-title">
+              <div>
+                <h2>小程序设置</h2>
+                <p>可配置首页、常识页、个人中心显示的 Logo 地址</p>
+              </div>
+            </div>
+            <form id="settingsForm" class="settings-form">
+              <label>
+                Logo URL
+                <input id="logoUrlInput" type="url" placeholder="https://example.com/logo.gif 或 logo.svg" />
+              </label>
+              <div class="settings-actions">
+                <button type="submit" class="primary">保存设置</button>
+              </div>
+            </form>
+          </section>
+        </section>
+
+        <section id="glossarySection" class="content-panel hidden">
+          <section class="panel glossary-panel">
+            <div class="panel-title">
+              <div>
+                <h2>“我学会了”统计</h2>
+                <p>查看首页 SOP 常识按钮的点击情况</p>
+              </div>
+              <button id="refreshGlossaryBtn">刷新</button>
+            </div>
+            <div class="glossary-stats">
+              <div class="stat-card">
+                <span class="stat-label">总点击数</span>
+                <strong id="glossaryTotal">0</strong>
+              </div>
+            </div>
+            <div class="glossary-grid">
+              <div class="glossary-block">
+                <h3>常识点击排行</h3>
+                <div id="glossaryTopList" class="glossary-list empty-inline">暂无数据</div>
+              </div>
+              <div class="glossary-block">
+                <h3>最近点击记录</h3>
+                <div id="glossaryRecentList" class="glossary-list empty-inline">暂无数据</div>
+              </div>
+            </div>
+          </section>
+        </section>
       </section>
     </main>
 
@@ -135,6 +155,10 @@
         <label>
           品名
           <input id="nameInput" required placeholder="例如：冰拿铁" />
+        </label>
+        <label>
+          分类
+          <input id="categoryInput" placeholder="例如：拿铁 / 美式 / 果咖 / 茶拿铁" />
         </label>
         <section class="variant-grid">
           <article class="variant-card" data-variant="standardCold">
