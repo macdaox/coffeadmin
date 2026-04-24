@@ -1343,7 +1343,7 @@ class MySqlProductStore {
     const safeLimit = Math.max(1, Math.min(Number(limit || 10), 50));
     const [[{ total }]] = await this.pool.execute('SELECT COUNT(*) AS total FROM glossary_learn_logs');
     const [topTerms] = await this.pool.execute(
-      `SELECT term, MAX(description) AS desc, COUNT(*) AS count, MAX(createdAt) AS lastLearnedAt
+      `SELECT term, MAX(description) AS descriptionText, COUNT(*) AS count, MAX(createdAt) AS lastLearnedAt
        FROM glossary_learn_logs
        GROUP BY term
        ORDER BY count DESC, lastLearnedAt DESC
@@ -1351,7 +1351,7 @@ class MySqlProductStore {
       [safeLimit]
     );
     const [recentLogs] = await this.pool.execute(
-      `SELECT term, description AS desc, source, userId, username, createdAt
+      `SELECT term, description AS descriptionText, source, userId, username, createdAt
        FROM glossary_learn_logs
        ORDER BY createdAt DESC
        LIMIT ?`,
@@ -1362,13 +1362,13 @@ class MySqlProductStore {
       total: Number(total || 0),
       topTerms: topTerms.map((item) => ({
         term: item.term,
-        desc: item.desc,
+        desc: item.descriptionText,
         count: Number(item.count || 0),
         lastLearnedAt: item.lastLearnedAt instanceof Date ? item.lastLearnedAt.toISOString() : item.lastLearnedAt
       })),
       recentLogs: recentLogs.map((item) => ({
         term: item.term,
-        desc: item.desc,
+        desc: item.descriptionText,
         source: item.source,
         userId: item.userId,
         username: item.username,
