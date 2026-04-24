@@ -741,6 +741,39 @@ class JsonProductStore {
     await this.saveGlossaryLearnLogs();
     return { recorded: true };
   }
+
+  async listGlossaryLearnStats(limit = 10) {
+    const logs = [...this.glossaryLearnLogs].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const termMap = new Map();
+
+    logs.forEach((item) => {
+      const key = item.term;
+      const current = termMap.get(key) || {
+        term: item.term,
+        desc: item.desc,
+        count: 0,
+        lastLearnedAt: item.createdAt
+      };
+      current.count += 1;
+      if (new Date(item.createdAt) > new Date(current.lastLearnedAt)) {
+        current.lastLearnedAt = item.createdAt;
+      }
+      termMap.set(key, current);
+    });
+
+    const topTerms = [...termMap.values()]
+      .sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        return new Date(b.lastLearnedAt) - new Date(a.lastLearnedAt);
+      })
+      .slice(0, limit);
+
+    return {
+      total: logs.length,
+      topTerms,
+      recentLogs: logs.slice(0, limit)
+    };
+  }
 }
 
 class MySqlProductStore {
@@ -1275,6 +1308,44 @@ class MySqlProductStore {
       ]
     );
     return { recorded: true };
+  }
+
+  async listGlossaryLearnStats(limit = 10) {
+    const safeLimit = Math.max(1, Math.min(Number(limit || 10), 50));
+    const [[{ total }]] = await this.pool.execute('SELECT COUNT(*) AS total FROM glossary_learn_logs');
+    const [topTerms] = await this.pool.execute(
+      `SELECT term, MAX(description) AS desc, COUNT(*) AS count, MAX(createdAt) AS lastLearnedAt
+       FROM glossary_learn_logs
+       GROUP BY term
+       ORDER BY count DESC, lastLearnedAt DESC
+       LIMIT ?`,
+      [safeLimit]
+    );
+    const [recentLogs] = await this.pool.execute(
+      `SELECT term, description AS desc, source, userId, username, createdAt
+       FROM glossary_learn_logs
+       ORDER BY createdAt DESC
+       LIMIT ?`,
+      [safeLimit]
+    );
+
+    return {
+      total: Number(total || 0),
+      topTerms: topTerms.map((item) => ({
+        term: item.term,
+        desc: item.desc,
+        count: Number(item.count || 0),
+        lastLearnedAt: item.lastLearnedAt instanceof Date ? item.lastLearnedAt.toISOString() : item.lastLearnedAt
+      })),
+      recentLogs: recentLogs.map((item) => ({
+        term: item.term,
+        desc: item.desc,
+        source: item.source,
+        userId: item.userId,
+        username: item.username,
+        createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt
+      }))
+    };
   }
 }
 

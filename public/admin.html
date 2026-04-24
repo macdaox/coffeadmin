@@ -96,6 +96,32 @@
           </div>
         </form>
       </section>
+
+      <section class="panel glossary-panel">
+        <div class="panel-title">
+          <div>
+            <h2>“我学会了”统计</h2>
+            <p>查看首页 SOP 常识按钮的点击情况</p>
+          </div>
+          <button id="refreshGlossaryBtn">刷新</button>
+        </div>
+        <div class="glossary-stats">
+          <div class="stat-card">
+            <span class="stat-label">总点击数</span>
+            <strong id="glossaryTotal">0</strong>
+          </div>
+        </div>
+        <div class="glossary-grid">
+          <div class="glossary-block">
+            <h3>常识点击排行</h3>
+            <div id="glossaryTopList" class="glossary-list empty-inline">暂无数据</div>
+          </div>
+          <div class="glossary-block">
+            <h3>最近点击记录</h3>
+            <div id="glossaryRecentList" class="glossary-list empty-inline">暂无数据</div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <dialog id="editorDialog">

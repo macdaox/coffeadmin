@@ -388,6 +388,15 @@ app.put('/api/admin/app-settings', requireAdmin, async (req, res, next) => {
   }
 });
 
+app.get('/api/admin/glossary/learn-stats', requireAdmin, async (req, res, next) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 50);
+    ok(res, await store.listGlossaryLearnStats(limit));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((req, res) => {
   fail(res, 404, '接口不存在');
 });

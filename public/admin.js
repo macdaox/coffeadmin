@@ -20,6 +20,10 @@ const userForm = document.querySelector('#userForm');
 const userCloseBtn = document.querySelector('#userCloseBtn');
 const settingsForm = document.querySelector('#settingsForm');
 const logoUrlInput = document.querySelector('#logoUrlInput');
+const refreshGlossaryBtn = document.querySelector('#refreshGlossaryBtn');
+const glossaryTotalEl = document.querySelector('#glossaryTotal');
+const glossaryTopListEl = document.querySelector('#glossaryTopList');
+const glossaryRecentListEl = document.querySelector('#glossaryRecentList');
 const toastEl = document.querySelector('#toast');
 
 const fields = {
@@ -32,6 +36,49 @@ const variantKeys = ['standardCold', 'standardHot', 'bucketCold', 'bucketHot'];
 
 let products = [];
 let appUsers = [];
+
+function renderGlossaryStats(stats) {
+  glossaryTotalEl.textContent = String(stats.total || 0);
+
+  const topTerms = stats.topTerms || [];
+  glossaryTopListEl.classList.toggle('empty-inline', topTerms.length === 0);
+  glossaryTopListEl.innerHTML = topTerms.length
+    ? topTerms
+        .map(
+          (item, index) => `
+            <div class="glossary-item">
+              <div class="glossary-rank">${index + 1}</div>
+              <div class="glossary-main">
+                <div class="glossary-term">${escapeHtml(item.term)}</div>
+                <div class="glossary-desc">${escapeHtml(item.desc || '')}</div>
+              </div>
+              <div class="glossary-side">
+                <strong>${Number(item.count || 0)}</strong>
+                <span>${formatTime(item.lastLearnedAt)}</span>
+              </div>
+            </div>
+          `
+        )
+        .join('')
+    : '暂无数据';
+
+  const recentLogs = stats.recentLogs || [];
+  glossaryRecentListEl.classList.toggle('empty-inline', recentLogs.length === 0);
+  glossaryRecentListEl.innerHTML = recentLogs.length
+    ? recentLogs
+        .map(
+          (item) => `
+            <div class="glossary-item">
+              <div class="glossary-main">
+                <div class="glossary-term">${escapeHtml(item.term)}</div>
+                <div class="glossary-desc">${escapeHtml(item.username || '-')} · ${formatTime(item.createdAt)}</div>
+              </div>
+            </div>
+          `
+        )
+        .join('')
+    : '暂无数据';
+}
 
 function toast(message) {
   toastEl.textContent = message;
@@ -150,6 +197,11 @@ async function loadSettings() {
   logoUrlInput.value = json.data.logoUrl || '';
 }
 
+async function loadGlossaryStats() {
+  const json = await request('/api/admin/glossary/learn-stats?limit=10');
+  renderGlossaryStats(json.data || { total: 0, topTerms: [], recentLogs: [] });
+}
+
 function openEditor(product) {
   document.querySelector('#dialogTitle').textContent = product ? '编辑产品' : '新增产品';
   fields.id.value = product?.id || '';
@@ -229,6 +281,9 @@ newBtn.addEventListener('click', () => openEditor());
 closeBtn.addEventListener('click', () => dialog.close());
 newUserBtn.addEventListener('click', () => openUserEditor());
 userCloseBtn.addEventListener('click', () => userDialog.close());
+refreshGlossaryBtn.addEventListener('click', () => {
+  loadGlossaryStats().catch((error) => toast(error.message));
+});
 
 loginForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -242,7 +297,7 @@ loginForm.addEventListener('submit', async (event) => {
     });
     passwordInput.value = '';
     showAdmin();
-    await Promise.all([loadProducts(), loadAppUsers(), loadSettings()]);
+    await Promise.all([loadProducts(), loadAppUsers(), loadSettings(), loadGlossaryStats()]);
   } catch (error) {
     toast(error.message);
   }
@@ -359,7 +414,7 @@ async function bootstrap() {
   try {
     await request('/api/admin/session');
     showAdmin();
-    await Promise.all([loadProducts(), loadAppUsers(), loadSettings()]);
+    await Promise.all([loadProducts(), loadAppUsers(), loadSettings(), loadGlossaryStats()]);
   } catch (error) {
     showLogin();
   }
