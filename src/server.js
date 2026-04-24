@@ -247,6 +247,23 @@ app.get('/api/product/catalog', requireAppUser, async (req, res, next) => {
   }
 });
 
+app.post('/api/glossary/learned', requireAppUser, async (req, res, next) => {
+  try {
+    ok(
+      res,
+      await store.recordGlossaryLearn({
+        term: req.body.term,
+        desc: req.body.desc,
+        source: req.body.source,
+        userId: req.appUser.id,
+        username: req.appUser.username
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/asr/recognize', requireAppUser, async (req, res, next) => {
   try {
     const audioBase64 = String(req.body.audio || '').trim();

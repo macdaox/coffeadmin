@@ -314,9 +314,11 @@ class JsonProductStore {
     this.adminFilePath = path.join(path.dirname(this.filePath), 'admin-users.json');
     this.appUserFilePath = path.join(path.dirname(this.filePath), 'app-users.json');
     this.appSettingsFilePath = path.join(path.dirname(this.filePath), 'app-settings.json');
+    this.glossaryLogFilePath = path.join(path.dirname(this.filePath), 'glossary-learn-logs.json');
     this.products = [];
     this.adminUsers = [];
     this.appUsers = [];
+    this.glossaryLearnLogs = [];
     this.appSettings = {
       logoUrl: ''
     };
@@ -339,6 +341,7 @@ class JsonProductStore {
     await this.initAdminUsers();
     await this.initAppUsers();
     await this.initAppSettings();
+    await this.initGlossaryLearnLogs();
   }
 
   async save() {
@@ -355,6 +358,10 @@ class JsonProductStore {
 
   async saveAppSettings() {
     await fs.writeFile(this.appSettingsFilePath, JSON.stringify(this.appSettings, null, 2));
+  }
+
+  async saveGlossaryLearnLogs() {
+    await fs.writeFile(this.glossaryLogFilePath, JSON.stringify(this.glossaryLearnLogs, null, 2));
   }
 
   async initAdminUsers() {
@@ -402,6 +409,16 @@ class JsonProductStore {
     } catch (error) {
       this.appSettings = { logoUrl: '' };
       await this.saveAppSettings();
+    }
+  }
+
+  async initGlossaryLearnLogs() {
+    try {
+      const raw = await fs.readFile(this.glossaryLogFilePath, 'utf8');
+      this.glossaryLearnLogs = JSON.parse(raw);
+    } catch (error) {
+      this.glossaryLearnLogs = [];
+      await this.saveGlossaryLearnLogs();
     }
   }
 
@@ -703,6 +720,27 @@ class JsonProductStore {
     await this.saveAppSettings();
     return this.getAppSettings();
   }
+
+  async recordGlossaryLearn(input) {
+    const term = String(input.term || '').trim();
+    if (!term) {
+      const error = new Error('缺少术语名称');
+      error.status = 400;
+      throw error;
+    }
+    const item = {
+      id: makeId(),
+      term,
+      desc: String(input.desc || '').trim(),
+      source: String(input.source || 'home').trim() || 'home',
+      userId: String(input.userId || '').trim(),
+      username: String(input.username || '').trim(),
+      createdAt: nowIso()
+    };
+    this.glossaryLearnLogs.unshift(item);
+    await this.saveGlossaryLearnLogs();
+    return { recorded: true };
+  }
 }
 
 class MySqlProductStore {
@@ -745,6 +783,7 @@ class MySqlProductStore {
     await this.initAdminUsers();
     await this.initAppUsers();
     await this.initAppSettings();
+    await this.initGlossaryLearnLogs();
   }
 
   async initAdminUsers() {
@@ -805,6 +844,22 @@ class MySqlProductStore {
        VALUES ('logoUrl', '', ?)`,
       [nowIso().slice(0, 19).replace('T', ' ')]
     );
+  }
+
+  async initGlossaryLearnLogs() {
+    await this.pool.execute(`
+      CREATE TABLE IF NOT EXISTS glossary_learn_logs (
+        id VARCHAR(64) PRIMARY KEY,
+        term VARCHAR(128) NOT NULL,
+        description TEXT NOT NULL,
+        source VARCHAR(32) NOT NULL,
+        userId VARCHAR(64) NOT NULL,
+        username VARCHAR(64) NOT NULL,
+        createdAt DATETIME NOT NULL,
+        INDEX idx_glossary_term (term),
+        INDEX idx_glossary_created (createdAt)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
   }
 
   rowToAppUser(row) {
@@ -1197,6 +1252,29 @@ class MySqlProductStore {
       [logoUrl, nowIso().slice(0, 19).replace('T', ' ')]
     );
     return this.getAppSettings();
+  }
+
+  async recordGlossaryLearn(input) {
+    const term = String(input.term || '').trim();
+    if (!term) {
+      const error = new Error('缺少术语名称');
+      error.status = 400;
+      throw error;
+    }
+    await this.pool.execute(
+      `INSERT INTO glossary_learn_logs (id, term, description, source, userId, username, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        makeId(),
+        term,
+        String(input.desc || '').trim(),
+        String(input.source || 'home').trim() || 'home',
+        String(input.userId || '').trim(),
+        String(input.username || '').trim(),
+        nowIso().slice(0, 19).replace('T', ' ')
+      ]
+    );
+    return { recorded: true };
   }
 }
 
