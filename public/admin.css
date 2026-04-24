@@ -166,6 +166,43 @@ p {
   display: none;
 }
 
+.category-manage {
+  padding: 18px;
+}
+
+.category-form {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 0;
+}
+
+.category-form input {
+  flex: 1;
+}
+
+.category-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e0e4dd;
+  border-radius: 999px;
+  background: #fbfcfa;
+}
+
+.category-chip button {
+  padding: 4px 8px;
+  border-radius: 999px;
+}
+
 input,
 select,
 textarea {
@@ -179,6 +216,10 @@ textarea {
 
 .actions input {
   width: 180px;
+}
+
+.actions select {
+  width: 160px;
 }
 
 .panel {
@@ -528,8 +569,18 @@ label {
   }
 
   .actions input,
+  .actions select,
   .actions button {
     width: 100%;
+  }
+
+  .category-form {
+    display: block;
+  }
+
+  .category-form button {
+    width: 100%;
+    margin-top: 12px;
   }
 
   .row {

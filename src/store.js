@@ -281,6 +281,10 @@ function productsToGroups(products) {
   return [...map.values()].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 }
 
+function normalizeCategoryName(value) {
+  return String(value || '').trim();
+}
+
 function validateProductGroupInput(input) {
   const name = String(input.name || '').trim();
   const category = String(input.category || '').trim();
@@ -327,10 +331,12 @@ class JsonProductStore {
     this.appUserFilePath = path.join(path.dirname(this.filePath), 'app-users.json');
     this.appSettingsFilePath = path.join(path.dirname(this.filePath), 'app-settings.json');
     this.glossaryLogFilePath = path.join(path.dirname(this.filePath), 'glossary-learn-logs.json');
+    this.categoryFilePath = path.join(path.dirname(this.filePath), 'product-categories.json');
     this.products = [];
     this.adminUsers = [];
     this.appUsers = [];
     this.glossaryLearnLogs = [];
+    this.categories = [];
     this.appSettings = {
       logoUrl: ''
     };
@@ -357,6 +363,7 @@ class JsonProductStore {
     await this.initAppUsers();
     await this.initAppSettings();
     await this.initGlossaryLearnLogs();
+    await this.initCategories();
   }
 
   async save() {
@@ -377,6 +384,10 @@ class JsonProductStore {
 
   async saveGlossaryLearnLogs() {
     await fs.writeFile(this.glossaryLogFilePath, JSON.stringify(this.glossaryLearnLogs, null, 2));
+  }
+
+  async saveCategories() {
+    await fs.writeFile(this.categoryFilePath, JSON.stringify(this.categories, null, 2));
   }
 
   async initAdminUsers() {
@@ -437,6 +448,16 @@ class JsonProductStore {
     }
   }
 
+  async initCategories() {
+    try {
+      const raw = await fs.readFile(this.categoryFilePath, 'utf8');
+      this.categories = JSON.parse(raw).map((item) => normalizeCategoryName(item)).filter(Boolean);
+    } catch (error) {
+      this.categories = [...new Set(this.products.map((item) => normalizeCategoryName(item.category)).filter(Boolean))];
+      await this.saveCategories();
+    }
+  }
+
   async list({ keyword = '', page = 1, pageSize = 20 } = {}) {
     const q = normalizeKeyword(keyword);
     const filtered = this.products
@@ -449,10 +470,13 @@ class JsonProductStore {
     };
   }
 
-  async listGroups({ keyword = '', page = 1, pageSize = 20 } = {}) {
+  async listGroups({ keyword = '', category = '', page = 1, pageSize = 20 } = {}) {
     const q = normalizeKeyword(keyword);
+    const categoryName = normalizeCategoryName(category);
     const filtered = productsToGroups(this.products).filter(
-      (item) => !q || item.name.toLowerCase().includes(q) || String(item.category || '').toLowerCase().includes(q)
+      (item) =>
+        (!q || item.name.toLowerCase().includes(q) || String(item.category || '').toLowerCase().includes(q)) &&
+        (!categoryName || String(item.category || '') === categoryName)
     );
     const start = (Math.max(page, 1) - 1) * pageSize;
     return {
@@ -557,6 +581,11 @@ class JsonProductStore {
     }
     this.products = nextProducts;
     await this.save();
+    if (data.category && !this.categories.includes(data.category)) {
+      this.categories.push(data.category);
+      this.categories.sort((a, b) => a.localeCompare(b, 'zh-CN'));
+      await this.saveCategories();
+    }
     const groups = await this.listGroups({ keyword: data.name, page: 1, pageSize: 1 });
     return groups.items[0];
   }
@@ -570,6 +599,55 @@ class JsonProductStore {
       throw error;
     }
     await this.save();
+    return true;
+  }
+
+  async listCategories() {
+    const derived = this.products.map((item) => normalizeCategoryName(item.category)).filter(Boolean);
+    const all = [...new Set([...this.categories, ...derived])].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+    this.categories = all;
+    await this.saveCategories();
+    return all;
+  }
+
+  async createCategory(name) {
+    const category = normalizeCategoryName(name);
+    if (!category) {
+      const error = new Error('分类名称不能为空');
+      error.status = 400;
+      throw error;
+    }
+    if (this.categories.includes(category)) {
+      const error = new Error('分类已存在');
+      error.status = 409;
+      throw error;
+    }
+    this.categories.push(category);
+    this.categories.sort((a, b) => a.localeCompare(b, 'zh-CN'));
+    await this.saveCategories();
+    return { name: category };
+  }
+
+  async deleteCategory(name) {
+    const category = normalizeCategoryName(name);
+    if (!category) {
+      const error = new Error('缺少分类名称');
+      error.status = 400;
+      throw error;
+    }
+    if (this.products.some((item) => normalizeCategoryName(item.category) === category)) {
+      const error = new Error('该分类下还有产品，不能删除');
+      error.status = 400;
+      throw error;
+    }
+    const before = this.categories.length;
+    this.categories = this.categories.filter((item) => item !== category);
+    if (before === this.categories.length) {
+      const error = new Error('分类不存在');
+      error.status = 404;
+      throw error;
+    }
+    await this.saveCategories();
     return true;
   }
 
@@ -837,6 +915,7 @@ class MySqlProductStore {
     await this.initAppUsers();
     await this.initAppSettings();
     await this.initGlossaryLearnLogs();
+    await this.initCategories();
   }
 
   async ensureProductCategoryColumn() {
@@ -921,6 +1000,23 @@ class MySqlProductStore {
     `);
   }
 
+  async initCategories() {
+    await this.pool.execute(`
+      CREATE TABLE IF NOT EXISTS product_categories (
+        name VARCHAR(64) PRIMARY KEY,
+        createdAt DATETIME NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    await this.pool.execute(
+      `INSERT IGNORE INTO product_categories (name, createdAt)
+       SELECT DISTINCT category, ?
+       FROM products
+       WHERE category <> ''`,
+      [nowIso().slice(0, 19).replace('T', ' ')]
+    );
+  }
+
   rowToAppUser(row) {
     return toPublicAppUser({
       ...row,
@@ -955,11 +1051,21 @@ class MySqlProductStore {
     return { total, items: rows.map((row) => this.rowToProduct(row)) };
   }
 
-  async listGroups({ keyword = '', page = 1, pageSize = 20 } = {}) {
+  async listGroups({ keyword = '', category = '', page = 1, pageSize = 20 } = {}) {
     const offset = (Math.max(page, 1) - 1) * pageSize;
     const hasKeyword = String(keyword || '').trim().length > 0;
-    const params = hasKeyword ? [`%${String(keyword || '').trim()}%`, `%${String(keyword || '').trim()}%`] : [];
-    const where = hasKeyword ? 'WHERE name LIKE ? OR category LIKE ?' : '';
+    const categoryName = normalizeCategoryName(category);
+    const params = [];
+    const clauses = [];
+    if (hasKeyword) {
+      clauses.push('(name LIKE ? OR category LIKE ?)');
+      params.push(`%${String(keyword || '').trim()}%`, `%${String(keyword || '').trim()}%`);
+    }
+    if (categoryName) {
+      clauses.push('category = ?');
+      params.push(categoryName);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     const [[{ total }]] = await this.pool.execute(`SELECT COUNT(DISTINCT name) AS total FROM products ${where}`, params);
     const [nameRows] = await this.pool.execute(
       `SELECT name, MAX(updatedAt) AS updatedAt
@@ -1106,6 +1212,12 @@ class MySqlProductStore {
           ]
         );
       }
+      if (data.category) {
+        await conn.execute(
+          `INSERT IGNORE INTO product_categories (name, createdAt) VALUES (?, ?)`,
+          [data.category, stamp]
+        );
+      }
       await conn.commit();
       const groups = await this.listGroups({ keyword: data.name, page: 1, pageSize: 1 });
       return groups.items[0];
@@ -1121,6 +1233,55 @@ class MySqlProductStore {
     const [result] = await this.pool.execute('DELETE FROM products WHERE name = ?', [name]);
     if (result.affectedRows === 0) {
       const error = new Error('产品不存在');
+      error.status = 404;
+      throw error;
+    }
+    return true;
+  }
+
+  async listCategories() {
+    const [rows] = await this.pool.execute(`SELECT name FROM product_categories ORDER BY name ASC`);
+    return rows.map((item) => item.name);
+  }
+
+  async createCategory(name) {
+    const category = normalizeCategoryName(name);
+    if (!category) {
+      const error = new Error('分类名称不能为空');
+      error.status = 400;
+      throw error;
+    }
+    try {
+      await this.pool.execute(
+        `INSERT INTO product_categories (name, createdAt) VALUES (?, ?)`,
+        [category, nowIso().slice(0, 19).replace('T', ' ')]
+      );
+    } catch (error) {
+      if (error.code === 'ER_DUP_ENTRY') {
+        error.status = 409;
+        error.message = '分类已存在';
+      }
+      throw error;
+    }
+    return { name: category };
+  }
+
+  async deleteCategory(name) {
+    const category = normalizeCategoryName(name);
+    if (!category) {
+      const error = new Error('缺少分类名称');
+      error.status = 400;
+      throw error;
+    }
+    const [[{ count }]] = await this.pool.execute(`SELECT COUNT(*) AS count FROM products WHERE category = ?`, [category]);
+    if (Number(count || 0) > 0) {
+      const error = new Error('该分类下还有产品，不能删除');
+      error.status = 400;
+      throw error;
+    }
+    const [result] = await this.pool.execute(`DELETE FROM product_categories WHERE name = ?`, [category]);
+    if (result.affectedRows === 0) {
+      const error = new Error('分类不存在');
       error.status = 404;
       throw error;
     }

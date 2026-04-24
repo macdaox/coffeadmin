@@ -32,6 +32,7 @@
         </div>
         <nav class="sidebar-nav">
           <button type="button" class="nav-link active" data-section="productsSection">产品 SOP</button>
+          <button type="button" class="nav-link" data-section="categoriesSection">产品分类</button>
           <button type="button" class="nav-link" data-section="usersSection">小程序用户</button>
           <button type="button" class="nav-link" data-section="settingsSection">小程序设置</button>
           <button type="button" class="nav-link" data-section="glossarySection">“我学会了”统计</button>
@@ -47,6 +48,9 @@
               <p>支持给产品加分类，列表里会直接显示在品名后面</p>
             </div>
             <div class="actions">
+              <select id="categoryFilterSelect">
+                <option value="">全部分类</option>
+              </select>
               <input id="keywordInput" type="search" placeholder="搜索产品名或分类" />
               <button id="searchBtn">搜索</button>
               <button id="newBtn" class="primary">新增产品</button>
@@ -66,6 +70,24 @@
               <tbody id="productBody"></tbody>
             </table>
             <div id="emptyState" class="empty">暂无产品</div>
+          </section>
+        </section>
+
+        <section id="categoriesSection" class="content-panel hidden">
+          <section class="panel">
+            <div class="panel-title">
+              <div>
+                <h2>产品分类</h2>
+                <p>先维护分类，再在产品编辑里直接选择</p>
+              </div>
+            </div>
+            <div class="category-manage">
+              <form id="categoryForm" class="category-form">
+                <input id="categoryNameInput" placeholder="输入新分类，例如：拿铁" />
+                <button type="submit" class="primary">新增分类</button>
+              </form>
+              <div id="categoryList" class="category-list empty-inline">暂无分类</div>
+            </div>
           </section>
         </section>
 
@@ -158,7 +180,9 @@
         </label>
         <label>
           分类
-          <input id="categoryInput" placeholder="例如：拿铁 / 美式 / 果咖 / 茶拿铁" />
+          <select id="categoryInput">
+            <option value="">未分类</option>
+          </select>
         </label>
         <section class="variant-grid">
           <article class="variant-card" data-variant="standardCold">

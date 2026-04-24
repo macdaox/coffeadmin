@@ -292,10 +292,38 @@ app.get('/api/admin/product/list', requireAdmin, async (req, res, next) => {
     const pageSize = Math.min(Math.max(Number(req.query.pageSize || 20), 1), 100);
     const result = await store.listGroups({
       keyword: req.query.keyword || '',
+      category: req.query.category || '',
       page,
       pageSize
     });
     ok(res, result.items, { total: result.total, page, pageSize });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/category/list', requireAdmin, async (req, res, next) => {
+  try {
+    ok(res, await store.listCategories());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/category/create', requireAdmin, async (req, res, next) => {
+  try {
+    ok(res, await store.createCategory(req.body.name));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/admin/category/delete', requireAdmin, async (req, res, next) => {
+  try {
+    const name = String(req.body.name || req.query.name || '').trim();
+    if (!name) return fail(res, 400, '缺少分类名称');
+    await store.deleteCategory(name);
+    ok(res, true);
   } catch (error) {
     next(error);
   }
