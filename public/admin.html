@@ -26,21 +26,112 @@
 
     <main id="adminView" class="shell hidden admin-layout">
       <aside class="sidebar">
-        <div class="sidebar-brand">
-          <h1>小瓦咖啡助手后台</h1>
-          <p>好喝多一点,热量少一点</p>
+        <div class="sidebar-top">
+          <button id="sidebarToggleBtn" class="sidebar-toggle" type="button" aria-label="收起侧栏">
+            <span></span>
+            <span></span>
+          </button>
+          <div class="sidebar-brand">
+            <div class="brand-mark">瓦</div>
+            <div class="brand-copy">
+              <h1>小瓦咖啡助手</h1>
+              <p>后台管理中心</p>
+            </div>
+          </div>
         </div>
         <nav class="sidebar-nav">
-          <button type="button" class="nav-link active" data-section="productsSection">产品 SOP</button>
-          <button type="button" class="nav-link" data-section="categoriesSection">产品分类</button>
-          <button type="button" class="nav-link" data-section="usersSection">小程序用户</button>
-          <button type="button" class="nav-link" data-section="settingsSection">小程序设置</button>
-          <button type="button" class="nav-link" data-section="glossarySection">“我学会了”统计</button>
+          <button type="button" class="nav-link active" data-section="dashboardSection">
+            <span class="nav-icon">▣</span>
+            <span class="nav-text">数据看板</span>
+          </button>
+          <button type="button" class="nav-link" data-section="productsSection">
+            <span class="nav-icon">☕</span>
+            <span class="nav-text">产品 SOP</span>
+          </button>
+          <button type="button" class="nav-link" data-section="categoriesSection">
+            <span class="nav-icon">⌘</span>
+            <span class="nav-text">产品分类</span>
+          </button>
+          <button type="button" class="nav-link" data-section="usersSection">
+            <span class="nav-icon">◔</span>
+            <span class="nav-text">小程序用户</span>
+          </button>
+          <button type="button" class="nav-link" data-section="settingsSection">
+            <span class="nav-icon">⚙</span>
+            <span class="nav-text">小程序设置</span>
+          </button>
+          <button type="button" class="nav-link" data-section="glossarySection">
+            <span class="nav-icon">✦</span>
+            <span class="nav-text">我学会了统计</span>
+          </button>
         </nav>
-        <button id="logoutBtn" class="sidebar-logout">退出登录</button>
+        <div class="sidebar-footer">
+          <div class="sidebar-user">
+            <div class="sidebar-user-avatar">瓦</div>
+            <div class="sidebar-user-copy">
+              <strong>小瓦咖啡助手</strong>
+              <span>热量少一点</span>
+            </div>
+          </div>
+          <button id="logoutBtn" class="sidebar-logout">退出登录</button>
+        </div>
       </aside>
 
       <section class="content-shell">
+        <section id="dashboardSection" class="content-panel">
+          <section class="toolbar dashboard-toolbar">
+            <div>
+              <h2>数据看板</h2>
+              <p>登录后台后先看整体情况，再进入具体模块维护</p>
+            </div>
+          </section>
+
+          <section class="dashboard-grid">
+            <article class="metric-card">
+              <span class="metric-label">产品总数</span>
+              <strong id="dashboardProductCount">0</strong>
+              <span class="metric-foot">按产品组统计</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">分类数量</span>
+              <strong id="dashboardCategoryCount">0</strong>
+              <span class="metric-foot">后台已维护分类</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">启用账号</span>
+              <strong id="dashboardActiveUserCount">0</strong>
+              <span class="metric-foot">小程序可登录账号</span>
+            </article>
+            <article class="metric-card highlight">
+              <span class="metric-label">我学会了点击</span>
+              <strong id="dashboardGlossaryCount">0</strong>
+              <span class="metric-foot">首页常识互动次数</span>
+            </article>
+          </section>
+
+          <section class="dashboard-panels">
+            <section class="panel dashboard-panel">
+              <div class="panel-title">
+                <div>
+                  <h2>最近更新的产品</h2>
+                  <p>帮助你快速定位最近改动</p>
+                </div>
+              </div>
+              <div id="dashboardRecentProducts" class="dashboard-list empty-inline">暂无数据</div>
+            </section>
+
+            <section class="panel dashboard-panel">
+              <div class="panel-title">
+                <div>
+                  <h2>分类分布</h2>
+                  <p>看目前产品都集中在哪些分类</p>
+                </div>
+              </div>
+              <div id="dashboardCategoryStats" class="dashboard-list empty-inline">暂无数据</div>
+            </section>
+          </section>
+        </section>
+
         <section id="productsSection" class="content-panel">
           <section class="toolbar">
             <div>

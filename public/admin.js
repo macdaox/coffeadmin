@@ -29,6 +29,14 @@ const glossaryTotalEl = document.querySelector('#glossaryTotal');
 const glossaryTopListEl = document.querySelector('#glossaryTopList');
 const glossaryRecentListEl = document.querySelector('#glossaryRecentList');
 const navLinks = [...document.querySelectorAll('.nav-link')];
+const sidebarToggleBtn = document.querySelector('#sidebarToggleBtn');
+const adminLayout = document.querySelector('#adminView');
+const dashboardProductCountEl = document.querySelector('#dashboardProductCount');
+const dashboardCategoryCountEl = document.querySelector('#dashboardCategoryCount');
+const dashboardActiveUserCountEl = document.querySelector('#dashboardActiveUserCount');
+const dashboardGlossaryCountEl = document.querySelector('#dashboardGlossaryCount');
+const dashboardRecentProductsEl = document.querySelector('#dashboardRecentProducts');
+const dashboardCategoryStatsEl = document.querySelector('#dashboardCategoryStats');
 const toastEl = document.querySelector('#toast');
 
 const fields = {
@@ -43,6 +51,59 @@ const variantKeys = ['standardCold', 'standardHot', 'bucketCold', 'bucketHot'];
 let products = [];
 let appUsers = [];
 let categories = [];
+let glossaryStats = { total: 0, topTerms: [], recentLogs: [] };
+
+function renderDashboard() {
+  dashboardProductCountEl.textContent = String(products.length);
+  dashboardCategoryCountEl.textContent = String(categories.length);
+  dashboardActiveUserCountEl.textContent = String(appUsers.filter((item) => item.isActive).length);
+  dashboardGlossaryCountEl.textContent = String(glossaryStats.total || 0);
+
+  const recentProducts = [...products]
+    .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+    .slice(0, 5);
+  dashboardRecentProductsEl.classList.toggle('empty-inline', recentProducts.length === 0);
+  dashboardRecentProductsEl.innerHTML = recentProducts.length
+    ? recentProducts
+        .map(
+          (item) => `
+            <div class="dashboard-item">
+              <div class="dashboard-item-main">
+                <div class="dashboard-item-title">${escapeHtml(item.name)}</div>
+                <div class="dashboard-item-subtitle">${escapeHtml(item.category || '未分类')}</div>
+              </div>
+              <div class="dashboard-item-side">${formatTime(item.updatedAt)}</div>
+            </div>
+          `
+        )
+        .join('')
+    : '暂无数据';
+
+  const categoryMap = new Map();
+  products.forEach((item) => {
+    const key = item.category || '未分类';
+    categoryMap.set(key, (categoryMap.get(key) || 0) + 1);
+  });
+  const categoryStats = [...categoryMap.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6);
+  dashboardCategoryStatsEl.classList.toggle('empty-inline', categoryStats.length === 0);
+  dashboardCategoryStatsEl.innerHTML = categoryStats.length
+    ? categoryStats
+        .map(
+          ([name, count]) => `
+            <div class="dashboard-item">
+              <div class="dashboard-item-main">
+                <div class="dashboard-item-title">${escapeHtml(name)}</div>
+                <div class="dashboard-item-subtitle">该分类下产品数</div>
+              </div>
+              <div class="dashboard-item-side">${count} 个</div>
+            </div>
+          `
+        )
+        .join('')
+    : '暂无数据';
+}
 
 function renderGlossaryStats(stats) {
   glossaryTotalEl.textContent = String(stats.total || 0);
@@ -85,6 +146,9 @@ function renderGlossaryStats(stats) {
         )
         .join('')
     : '暂无数据';
+
+  glossaryStats = stats || { total: 0, topTerms: [], recentLogs: [] };
+  renderDashboard();
 }
 
 function toast(message) {
@@ -147,6 +211,7 @@ function render() {
     )
     .join('');
   emptyEl.style.display = products.length ? 'none' : 'block';
+  renderDashboard();
 }
 
 function renderUsers() {
@@ -167,6 +232,7 @@ function renderUsers() {
     )
     .join('');
   userEmptyEl.style.display = appUsers.length ? 'none' : 'block';
+  renderDashboard();
 }
 
 function renderCategories() {
@@ -193,6 +259,7 @@ function renderCategories() {
         )
         .join('')
     : '暂无分类';
+  renderDashboard();
 }
 
 function renderVariantBadges(variants = {}) {
@@ -306,6 +373,16 @@ function setActiveSection(sectionId) {
   });
 }
 
+function setSidebarCollapsed(collapsed) {
+  adminLayout.classList.toggle('sidebar-collapsed', Boolean(collapsed));
+  sidebarToggleBtn.setAttribute('aria-label', collapsed ? '展开侧栏' : '收起侧栏');
+  try {
+    localStorage.setItem('adminSidebarCollapsed', collapsed ? '1' : '0');
+  } catch (error) {
+    // ignore local storage failures
+  }
+}
+
 function openUserEditor(user) {
   document.querySelector('#userDialogTitle').textContent = user ? '编辑用户' : '新增用户';
   document.querySelector('#userIdInput').value = user?.id || '';
@@ -347,6 +424,9 @@ userCloseBtn.addEventListener('click', () => userDialog.close());
 navLinks.forEach((button) => {
   button.addEventListener('click', () => setActiveSection(button.dataset.section));
 });
+sidebarToggleBtn.addEventListener('click', () => {
+  setSidebarCollapsed(!adminLayout.classList.contains('sidebar-collapsed'));
+});
 refreshGlossaryBtn.addEventListener('click', () => {
   loadGlossaryStats().catch((error) => toast(error.message));
 });
@@ -379,7 +459,7 @@ loginForm.addEventListener('submit', async (event) => {
     });
     passwordInput.value = '';
     showAdmin();
-    setActiveSection('productsSection');
+    setActiveSection('dashboardSection');
     await Promise.all([loadCategories(), loadProducts(), loadAppUsers(), loadSettings(), loadGlossaryStats()]);
   } catch (error) {
     toast(error.message);
@@ -395,9 +475,11 @@ logoutBtn.addEventListener('click', async () => {
   products = [];
   appUsers = [];
   categories = [];
+  glossaryStats = { total: 0, topTerms: [], recentLogs: [] };
   render();
   renderUsers();
   renderCategories();
+  renderDashboard();
   showLogin();
 });
 
@@ -518,9 +600,11 @@ settingsForm.addEventListener('submit', async (event) => {
 
 async function bootstrap() {
   try {
+    const savedSidebarState = localStorage.getItem('adminSidebarCollapsed');
+    setSidebarCollapsed(savedSidebarState === '1');
     await request('/api/admin/session');
     showAdmin();
-    setActiveSection('productsSection');
+    setActiveSection('dashboardSection');
     const results = await Promise.allSettled([loadCategories(), loadProducts(), loadAppUsers(), loadSettings(), loadGlossaryStats()]);
     const failed = results.find((item) => item.status === 'rejected');
     if (failed) {
@@ -532,7 +616,7 @@ async function bootstrap() {
       return;
     }
     showAdmin();
-    setActiveSection('productsSection');
+    setActiveSection('dashboardSection');
     toast(error.message || '后台初始化失败');
   }
 }
