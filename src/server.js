@@ -232,6 +232,15 @@ app.get('/api/product/recommend', requireAppUser, async (req, res, next) => {
   }
 });
 
+app.get('/api/product/hot', requireAppUser, async (req, res, next) => {
+  try {
+    const limit = Math.min(Number(req.query.limit || 8), 20);
+    ok(res, await store.hot(limit));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/product/catalog', requireAppUser, async (req, res, next) => {
   try {
     const page = Math.max(Number(req.query.page || 1), 1);

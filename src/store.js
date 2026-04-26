@@ -505,6 +505,23 @@ class JsonProductStore {
     }));
   }
 
+  async hot(limit = 8) {
+    return [...this.products]
+      .sort((a, b) => {
+        if (Number(b.hotScore || 0) !== Number(a.hotScore || 0)) {
+          return Number(b.hotScore || 0) - Number(a.hotScore || 0);
+        }
+        return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+      })
+      .slice(0, limit)
+      .map(({ id, name, cupType, temperature }) => ({
+        id,
+        name,
+        cupType,
+        temperature
+      }));
+  }
+
   async create(input) {
     const { data, errors } = validateProductInput(input);
     if (errors.length) {
@@ -1100,6 +1117,17 @@ class MySqlProductStore {
       `SELECT id, name, cupType, temperature
        FROM products
        ORDER BY isRecommended DESC, hotScore DESC, updatedAt DESC
+       LIMIT ?`,
+      [Number(limit)]
+    );
+    return rows;
+  }
+
+  async hot(limit = 8) {
+    const [rows] = await this.pool.execute(
+      `SELECT id, name, cupType, temperature
+       FROM products
+       ORDER BY hotScore DESC, updatedAt DESC
        LIMIT ?`,
       [Number(limit)]
     );
