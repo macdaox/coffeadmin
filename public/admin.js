@@ -221,6 +221,7 @@ function renderUsers() {
         <tr>
           <td>${escapeHtml(item.username)}</td>
           <td>${escapeHtml(item.displayName || '-')}</td>
+          <td><span class="status ${item.wechatBound ? 'active' : 'disabled'}">${item.wechatBound ? '已绑定' : '未绑定'}</span></td>
           <td><span class="status ${item.isActive ? 'active' : 'disabled'}">${item.isActive ? '启用' : '停用'}</span></td>
           <td>${formatTime(item.updatedAt)}</td>
           <td>

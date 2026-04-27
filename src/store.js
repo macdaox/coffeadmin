@@ -140,6 +140,7 @@ function toPublicAppUser(user) {
     id: user.id,
     username: user.username,
     displayName: user.displayName || user.username,
+    wechatBound: Boolean(user.wechatOpenId),
     isActive: Boolean(user.isActive),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt
@@ -418,7 +419,10 @@ class JsonProductStore {
   async initAppUsers() {
     try {
       const raw = await fs.readFile(this.appUserFilePath, 'utf8');
-      this.appUsers = JSON.parse(raw);
+      this.appUsers = JSON.parse(raw).map((item) => ({
+        ...item,
+        wechatOpenId: String(item.wechatOpenId || '').trim()
+      }));
     } catch (error) {
       this.appUsers = [];
       await this.saveAppUsers();
@@ -703,6 +707,7 @@ class JsonProductStore {
       id: makeId(),
       username: data.username,
       displayName: data.displayName || data.username,
+      wechatOpenId: '',
       passwordHash: makePasswordHash(data.password),
       isActive: data.isActive !== false,
       createdAt: stamp,
@@ -762,9 +767,44 @@ class JsonProductStore {
     return toPublicAppUser(user);
   }
 
+  async verifyAppUserWechatLogin(wechatOpenId) {
+    const openId = String(wechatOpenId || '').trim();
+    const user = this.appUsers.find((item) => item.wechatOpenId === openId);
+    if (!user || !user.isActive) return null;
+    return toPublicAppUser(user);
+  }
+
   async getAppUserById(id) {
     const user = this.appUsers.find((item) => item.id === id);
     return user ? toPublicAppUser(user) : null;
+  }
+
+  async bindWechatToAppUser(id, wechatOpenId) {
+    const openId = String(wechatOpenId || '').trim();
+    if (!openId) {
+      const error = new Error('缺少微信标识');
+      error.status = 400;
+      throw error;
+    }
+    const index = this.appUsers.findIndex((item) => item.id === id);
+    if (index < 0) {
+      const error = new Error('用户不存在');
+      error.status = 404;
+      throw error;
+    }
+    const owner = this.appUsers.find((item) => item.id !== id && item.wechatOpenId === openId);
+    if (owner) {
+      const error = new Error('该微信号已绑定其他账号');
+      error.status = 409;
+      throw error;
+    }
+    this.appUsers[index] = {
+      ...this.appUsers[index],
+      wechatOpenId: openId,
+      updatedAt: nowIso()
+    };
+    await this.saveAppUsers();
+    return toPublicAppUser(this.appUsers[index]);
   }
 
   async updateOwnAppUser(id, input) {
@@ -975,6 +1015,7 @@ class MySqlProductStore {
         id VARCHAR(64) PRIMARY KEY,
         username VARCHAR(64) NOT NULL UNIQUE,
         displayName VARCHAR(64) NOT NULL,
+        wechatOpenId VARCHAR(128) NOT NULL DEFAULT '',
         passwordHash VARCHAR(255) NOT NULL,
         isActive TINYINT(1) NOT NULL DEFAULT 1,
         createdAt DATETIME NOT NULL,
@@ -982,6 +1023,13 @@ class MySqlProductStore {
         INDEX idx_app_users_updated (updatedAt)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+    await this.ensureAppUserWechatColumn();
+  }
+
+  async ensureAppUserWechatColumn() {
+    const [rows] = await this.pool.execute(`SHOW COLUMNS FROM app_users LIKE 'wechatOpenId'`);
+    if (rows.length > 0) return;
+    await this.pool.execute(`ALTER TABLE app_users ADD COLUMN wechatOpenId VARCHAR(128) NOT NULL DEFAULT '' AFTER displayName`);
   }
 
   async initAppSettings() {
@@ -1036,6 +1084,7 @@ class MySqlProductStore {
   rowToAppUser(row) {
     return toPublicAppUser({
       ...row,
+      wechatOpenId: String(row.wechatOpenId || '').trim(),
       isActive: Boolean(row.isActive),
       createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
       updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt
@@ -1347,6 +1396,7 @@ class MySqlProductStore {
       id: makeId(),
       username: data.username,
       displayName: data.displayName || data.username,
+      wechatOpenId: '',
       passwordHash: makePasswordHash(data.password),
       isActive: data.isActive !== false ? 1 : 0,
       createdAt: stamp,
@@ -1354,9 +1404,9 @@ class MySqlProductStore {
     };
     try {
       await this.pool.execute(
-        `INSERT INTO app_users (id, username, displayName, passwordHash, isActive, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [user.id, user.username, user.displayName, user.passwordHash, user.isActive, stamp, stamp]
+        `INSERT INTO app_users (id, username, displayName, wechatOpenId, passwordHash, isActive, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [user.id, user.username, user.displayName, user.wechatOpenId, user.passwordHash, user.isActive, stamp, stamp]
       );
     } catch (error) {
       if (error.code === 'ER_DUP_ENTRY') {
@@ -1424,9 +1474,47 @@ class MySqlProductStore {
     return this.rowToAppUser(user);
   }
 
+  async verifyAppUserWechatLogin(wechatOpenId) {
+    const openId = String(wechatOpenId || '').trim();
+    if (!openId) return null;
+    const [rows] = await this.pool.execute('SELECT * FROM app_users WHERE wechatOpenId = ? LIMIT 1', [openId]);
+    const user = rows[0];
+    if (!user || !user.isActive) return null;
+    return this.rowToAppUser(user);
+  }
+
   async getAppUserById(id) {
     const [rows] = await this.pool.execute('SELECT * FROM app_users WHERE id = ? LIMIT 1', [id]);
     return rows[0] ? this.rowToAppUser(rows[0]) : null;
+  }
+
+  async bindWechatToAppUser(id, wechatOpenId) {
+    const openId = String(wechatOpenId || '').trim();
+    if (!openId) {
+      const error = new Error('缺少微信标识');
+      error.status = 400;
+      throw error;
+    }
+    const [rows] = await this.pool.execute('SELECT * FROM app_users WHERE id = ? LIMIT 1', [id]);
+    const current = rows[0];
+    if (!current) {
+      const error = new Error('用户不存在');
+      error.status = 404;
+      throw error;
+    }
+    const [ownerRows] = await this.pool.execute('SELECT id FROM app_users WHERE wechatOpenId = ? AND id <> ? LIMIT 1', [openId, id]);
+    if (ownerRows[0]) {
+      const error = new Error('该微信号已绑定其他账号');
+      error.status = 409;
+      throw error;
+    }
+    await this.pool.execute(
+      `UPDATE app_users
+       SET wechatOpenId = ?, updatedAt = ?
+       WHERE id = ?`,
+      [openId, nowIso().slice(0, 19).replace('T', ' '), id]
+    );
+    return this.getAppUserById(id);
   }
 
   async updateOwnAppUser(id, input) {

@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
+const https = require('https');
 const { createStore } = require('./store');
 const { recognizeSentence } = require('./asr');
 
@@ -49,6 +50,7 @@ function createAppToken(user) {
       id: user.id,
       username: user.username,
       displayName: user.displayName,
+      wechatBound: Boolean(user.wechatBound),
       kind: 'app',
       exp: Math.floor(Date.now() / 1000) + sessionMaxAgeSeconds
     })
@@ -79,6 +81,7 @@ function verifySessionToken(token) {
       id: data.id,
       username: data.username,
       displayName: data.displayName,
+      wechatBound: Boolean(data.wechatBound),
       kind: data.kind || 'admin'
     };
   } catch (error) {
@@ -96,6 +99,47 @@ function setSessionCookie(res, token) {
 
 function clearSessionCookie(res) {
   res.setHeader('Set-Cookie', 'admin_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+}
+
+function requestWechatSession(code) {
+  const appId = String(process.env.WECHAT_APP_ID || process.env.MINIAPP_APP_ID || '').trim();
+  const appSecret = String(process.env.WECHAT_APP_SECRET || process.env.MINIAPP_APP_SECRET || '').trim();
+  if (!appId || !appSecret) {
+    const error = new Error('服务端未配置 WECHAT_APP_ID / WECHAT_APP_SECRET');
+    error.status = 500;
+    throw error;
+  }
+  const query = new URLSearchParams({
+    appid: appId,
+    secret: appSecret,
+    js_code: String(code || '').trim(),
+    grant_type: 'authorization_code'
+  });
+
+  return new Promise((resolve, reject) => {
+    https
+      .get(`https://api.weixin.qq.com/sns/jscode2session?${query.toString()}`, (response) => {
+        let raw = '';
+        response.on('data', (chunk) => {
+          raw += chunk;
+        });
+        response.on('end', () => {
+          try {
+            const data = JSON.parse(raw || '{}');
+            if (data.errcode) {
+              const error = new Error(data.errmsg || '微信登录失败');
+              error.status = 400;
+              reject(error);
+              return;
+            }
+            resolve(data);
+          } catch (error) {
+            reject(error);
+          }
+        });
+      })
+      .on('error', reject);
+  });
 }
 
 function getSessionUser(req) {
@@ -168,13 +212,27 @@ app.post('/api/user/login', async (req, res, next) => {
   }
 });
 
+app.post('/api/user/wechat-login', async (req, res, next) => {
+  try {
+    const code = String(req.body.code || '').trim();
+    if (!code) return fail(res, 400, '缺少微信登录凭证');
+    const session = await requestWechatSession(code);
+    const user = await store.verifyAppUserWechatLogin(session.openid);
+    if (!user) return fail(res, 404, '当前微信号未绑定账号，请先使用账号密码登录后在个人中心绑定');
+    ok(res, { token: createAppToken(user), user });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/user/session', (req, res) => {
   const user = getBearerUser(req);
   if (!user) return fail(res, 401, '未登录');
   ok(res, {
     id: user.id,
     username: user.username,
-    displayName: user.displayName || user.username
+    displayName: user.displayName || user.username,
+    wechatBound: Boolean(user.wechatBound)
   });
 });
 
@@ -199,6 +257,18 @@ app.get('/api/app/settings', async (req, res, next) => {
 app.put('/api/user/profile', requireAppUser, async (req, res, next) => {
   try {
     const user = await store.updateOwnAppUser(req.appUser.id, req.body || {});
+    ok(res, { user, token: createAppToken(user) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/user/wechat-bind', requireAppUser, async (req, res, next) => {
+  try {
+    const code = String(req.body.code || '').trim();
+    if (!code) return fail(res, 400, '缺少微信绑定凭证');
+    const session = await requestWechatSession(code);
+    const user = await store.bindWechatToAppUser(req.appUser.id, session.openid);
     ok(res, { user, token: createAppToken(user) });
   } catch (error) {
     next(error);
