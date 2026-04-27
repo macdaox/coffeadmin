@@ -104,6 +104,7 @@ function clearSessionCookie(res) {
 function requestWechatSession(code) {
   const appId = String(process.env.WECHAT_APP_ID || process.env.MINIAPP_APP_ID || '').trim();
   const appSecret = String(process.env.WECHAT_APP_SECRET || process.env.MINIAPP_APP_SECRET || '').trim();
+  const insecureWechatTls = ['1', 'true', 'yes'].includes(String(process.env.WECHAT_TLS_INSECURE || '').trim().toLowerCase());
   if (!appId || !appSecret) {
     const error = new Error('服务端未配置 WECHAT_APP_ID / WECHAT_APP_SECRET');
     error.status = 500;
@@ -118,7 +119,10 @@ function requestWechatSession(code) {
   });
 
   return new Promise((resolve, reject) => {
-    const request = https.get(`https://api.weixin.qq.com/sns/jscode2session?${query.toString()}`, (response) => {
+    const request = https.get(
+      `https://api.weixin.qq.com/sns/jscode2session?${query.toString()}`,
+      insecureWechatTls ? { rejectUnauthorized: false } : undefined,
+      (response) => {
         let raw = '';
         response.on('data', (chunk) => {
           raw += chunk;
@@ -141,7 +145,8 @@ function requestWechatSession(code) {
             reject(parseError);
           }
         });
-      });
+      }
+    );
 
     request.setTimeout(8000, () => {
       request.destroy();
