@@ -107,6 +107,7 @@ function requestWechatSession(code) {
   if (!appId || !appSecret) {
     const error = new Error('服务端未配置 WECHAT_APP_ID / WECHAT_APP_SECRET');
     error.status = 500;
+    error.expose = true;
     throw error;
   }
   const query = new URLSearchParams({
@@ -129,6 +130,7 @@ function requestWechatSession(code) {
             if (data.errcode) {
               const error = new Error(data.errmsg || '微信登录失败');
               error.status = 400;
+              error.expose = true;
               reject(error);
               return;
             }
@@ -510,7 +512,7 @@ app.use((req, res) => {
 
 app.use((error, req, res, next) => {
   const status = error.status || 500;
-  const message = status >= 500 ? '服务器错误' : error.message;
+  const message = status >= 500 && !error.expose ? '服务器错误' : error.message;
   if (status >= 500) console.error(error);
   fail(res, status, message);
 });
