@@ -118,8 +118,7 @@ function requestWechatSession(code) {
   });
 
   return new Promise((resolve, reject) => {
-    https
-      .get(`https://api.weixin.qq.com/sns/jscode2session?${query.toString()}`, (response) => {
+    const request = https.get(`https://api.weixin.qq.com/sns/jscode2session?${query.toString()}`, (response) => {
         let raw = '';
         response.on('data', (chunk) => {
           raw += chunk;
@@ -136,11 +135,28 @@ function requestWechatSession(code) {
             }
             resolve(data);
           } catch (error) {
-            reject(error);
+            const parseError = new Error(`微信返回解析失败：${error.message}`);
+            parseError.status = 502;
+            parseError.expose = true;
+            reject(parseError);
           }
         });
-      })
-      .on('error', reject);
+      });
+
+    request.setTimeout(8000, () => {
+      request.destroy();
+      const timeoutError = new Error('请求微信登录服务超时，请稍后重试');
+      timeoutError.status = 504;
+      timeoutError.expose = true;
+      reject(timeoutError);
+    });
+
+    request.on('error', (error) => {
+      const requestError = new Error(`请求微信登录服务失败：${error.message}`);
+      requestError.status = 502;
+      requestError.expose = true;
+      reject(requestError);
+    });
   });
 }
 
