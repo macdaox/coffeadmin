@@ -50,6 +50,7 @@ function createAppToken(user) {
       id: user.id,
       username: user.username,
       displayName: user.displayName,
+      role: user.role,
       wechatBound: Boolean(user.wechatBound),
       kind: 'app',
       exp: Math.floor(Date.now() / 1000) + sessionMaxAgeSeconds
@@ -81,6 +82,7 @@ function verifySessionToken(token) {
       id: data.id,
       username: data.username,
       displayName: data.displayName,
+      role: data.role === 'manager' ? 'manager' : 'staff',
       wechatBound: Boolean(data.wechatBound),
       kind: data.kind || 'admin'
     };
@@ -193,6 +195,20 @@ function requireAppUser(req, res, next) {
   return next();
 }
 
+async function requireManager(req, res, next) {
+  try {
+    const user = getBearerUser(req);
+    if (!user) return fail(res, 401, '请先登录后再操作');
+    const latestUser = await store.getAppUserById(user.id);
+    if (!latestUser) return fail(res, 404, '用户不存在');
+    if (latestUser.role !== 'manager') return fail(res, 403, '仅店长可操作');
+    req.appUser = latestUser;
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
+
 app.get('/healthz', (req, res) => {
   ok(res, { status: 'ok' });
 });
@@ -255,6 +271,7 @@ app.get('/api/user/session', (req, res) => {
     id: user.id,
     username: user.username,
     displayName: user.displayName || user.username,
+    role: user.role === 'manager' ? 'manager' : 'staff',
     wechatBound: Boolean(user.wechatBound)
   });
 });
@@ -293,6 +310,29 @@ app.post('/api/user/wechat-bind', requireAppUser, async (req, res, next) => {
     const session = await requestWechatSession(code);
     const user = await store.bindWechatToAppUser(req.appUser.id, session.openid);
     ok(res, { user, token: createAppToken(user) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/manager/app-user/list', requireManager, async (req, res, next) => {
+  try {
+    const page = Math.max(Number(req.query.page || 1), 1);
+    const pageSize = Math.min(Math.max(Number(req.query.pageSize || 50), 1), 100);
+    const result = await store.listManagedAppUsers(req.appUser.id, {
+      keyword: req.query.keyword || '',
+      page,
+      pageSize
+    });
+    ok(res, result.items, { total: result.total, page, pageSize });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/manager/app-user/create', requireManager, async (req, res, next) => {
+  try {
+    ok(res, await store.createManagedAppUser(req.appUser.id, req.body || {}));
   } catch (error) {
     next(error);
   }

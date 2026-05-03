@@ -196,6 +196,7 @@
                 <tr>
                   <th>账号</th>
                   <th>姓名/备注</th>
+                  <th>角色</th>
                   <th>微信绑定</th>
                   <th>状态</th>
                   <th>更新时间</th>
@@ -329,10 +330,17 @@
             <input id="appUsernameInput" autocomplete="off" required placeholder="例如：store01" />
           </label>
           <label>
-            姓名/备注
-            <input id="displayNameInput" autocomplete="off" placeholder="例如：门店 A" />
+            门店信息/备注
+            <input id="displayNameInput" autocomplete="off" placeholder="例如：万象城店" />
           </label>
         </div>
+        <label>
+          角色
+          <select id="userRoleInput">
+            <option value="staff">普通用户</option>
+            <option value="manager">店长</option>
+          </select>
+        </label>
         <label>
           密码
           <input id="appPasswordInput" type="password" autocomplete="new-password" placeholder="新增必填，编辑时留空则不修改" />

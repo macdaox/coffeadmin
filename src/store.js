@@ -140,6 +140,7 @@ function toPublicAppUser(user) {
     id: user.id,
     username: user.username,
     displayName: user.displayName || user.username,
+    role: user.role === 'manager' ? 'manager' : 'staff',
     wechatBound: Boolean(user.wechatOpenId),
     isActive: Boolean(user.isActive),
     createdAt: user.createdAt,
@@ -161,6 +162,13 @@ function validateAppUserInput(input, partial = false) {
 
   if (!partial || input.displayName !== undefined) {
     data.displayName = String(input.displayName || '').trim();
+  }
+
+  if (!partial || input.role !== undefined) {
+    data.role = String(input.role || 'staff').trim() || 'staff';
+    if (!['staff', 'manager'].includes(data.role)) {
+      errors.push('角色只能是 staff 或 manager');
+    }
   }
 
   if (!partial || input.password !== undefined) {
@@ -421,6 +429,7 @@ class JsonProductStore {
       const raw = await fs.readFile(this.appUserFilePath, 'utf8');
       this.appUsers = JSON.parse(raw).map((item) => ({
         ...item,
+        role: item.role === 'manager' ? 'manager' : 'staff',
         wechatOpenId: String(item.wechatOpenId || '').trim()
       }));
     } catch (error) {
@@ -707,6 +716,7 @@ class JsonProductStore {
       id: makeId(),
       username: data.username,
       displayName: data.displayName || data.username,
+      role: data.role || 'staff',
       wechatOpenId: '',
       passwordHash: makePasswordHash(data.password),
       isActive: data.isActive !== false,
@@ -742,6 +752,7 @@ class JsonProductStore {
     };
     if (data.username !== undefined) next.username = data.username;
     if (data.displayName !== undefined) next.displayName = data.displayName || next.username;
+    if (data.role !== undefined) next.role = data.role;
     if (data.isActive !== undefined) next.isActive = data.isActive;
     if (data.password) next.passwordHash = makePasswordHash(data.password);
     this.appUsers[index] = next;
@@ -856,6 +867,82 @@ class JsonProductStore {
     this.appUsers[index] = next;
     await this.saveAppUsers();
     return toPublicAppUser(next);
+  }
+
+  async listManagedAppUsers(managerId, { keyword = '', page = 1, pageSize = 50 } = {}) {
+    const manager = this.appUsers.find((item) => item.id === managerId);
+    if (!manager || manager.role !== 'manager' || !manager.isActive) {
+      const error = new Error('仅店长可管理用户');
+      error.status = 403;
+      throw error;
+    }
+    const storeName = String(manager.displayName || '').trim();
+    if (!storeName) {
+      const error = new Error('当前店长账号缺少门店信息，请联系管理员配置');
+      error.status = 400;
+      throw error;
+    }
+    const q = normalizeKeyword(keyword);
+    const filtered = this.appUsers
+      .filter(
+        (item) =>
+          item.role !== 'manager' &&
+          String(item.displayName || '').trim() === storeName &&
+          (!q || item.username.toLowerCase().includes(q) || String(item.displayName || '').toLowerCase().includes(q))
+      )
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    const start = (Math.max(page, 1) - 1) * pageSize;
+    return {
+      total: filtered.length,
+      items: filtered.slice(start, start + pageSize).map(toPublicAppUser)
+    };
+  }
+
+  async createManagedAppUser(managerId, input) {
+    const manager = this.appUsers.find((item) => item.id === managerId);
+    if (!manager || manager.role !== 'manager' || !manager.isActive) {
+      const error = new Error('仅店长可新增用户');
+      error.status = 403;
+      throw error;
+    }
+    const storeName = String(manager.displayName || '').trim();
+    if (!storeName) {
+      const error = new Error('当前店长账号缺少门店信息，请联系管理员配置');
+      error.status = 400;
+      throw error;
+    }
+    const { data, errors } = validateAppUserInput({
+      username: input.username,
+      password: input.password,
+      isActive: input.isActive,
+      displayName: storeName,
+      role: 'staff'
+    });
+    if (errors.length) {
+      const error = new Error(errors.join('；'));
+      error.status = 400;
+      throw error;
+    }
+    if (this.appUsers.some((item) => item.username === data.username)) {
+      const error = new Error('账号已存在');
+      error.status = 409;
+      throw error;
+    }
+    const stamp = nowIso();
+    const user = {
+      id: makeId(),
+      username: data.username,
+      displayName: storeName,
+      role: 'staff',
+      wechatOpenId: '',
+      passwordHash: makePasswordHash(data.password),
+      isActive: data.isActive !== false,
+      createdAt: stamp,
+      updatedAt: stamp
+    };
+    this.appUsers.unshift(user);
+    await this.saveAppUsers();
+    return toPublicAppUser(user);
   }
 
   async getAppSettings() {
@@ -1015,6 +1102,7 @@ class MySqlProductStore {
         id VARCHAR(64) PRIMARY KEY,
         username VARCHAR(64) NOT NULL UNIQUE,
         displayName VARCHAR(64) NOT NULL,
+        role VARCHAR(16) NOT NULL DEFAULT 'staff',
         wechatOpenId VARCHAR(128) NOT NULL DEFAULT '',
         passwordHash VARCHAR(255) NOT NULL,
         isActive TINYINT(1) NOT NULL DEFAULT 1,
@@ -1024,12 +1112,19 @@ class MySqlProductStore {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
     await this.ensureAppUserWechatColumn();
+    await this.ensureAppUserRoleColumn();
   }
 
   async ensureAppUserWechatColumn() {
     const [rows] = await this.pool.execute(`SHOW COLUMNS FROM app_users LIKE 'wechatOpenId'`);
     if (rows.length > 0) return;
     await this.pool.execute(`ALTER TABLE app_users ADD COLUMN wechatOpenId VARCHAR(128) NOT NULL DEFAULT '' AFTER displayName`);
+  }
+
+  async ensureAppUserRoleColumn() {
+    const [rows] = await this.pool.execute(`SHOW COLUMNS FROM app_users LIKE 'role'`);
+    if (rows.length > 0) return;
+    await this.pool.execute(`ALTER TABLE app_users ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'staff' AFTER displayName`);
   }
 
   async initAppSettings() {
@@ -1084,6 +1179,7 @@ class MySqlProductStore {
   rowToAppUser(row) {
     return toPublicAppUser({
       ...row,
+      role: row.role === 'manager' ? 'manager' : 'staff',
       wechatOpenId: String(row.wechatOpenId || '').trim(),
       isActive: Boolean(row.isActive),
       createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
@@ -1396,6 +1492,7 @@ class MySqlProductStore {
       id: makeId(),
       username: data.username,
       displayName: data.displayName || data.username,
+      role: data.role || 'staff',
       wechatOpenId: '',
       passwordHash: makePasswordHash(data.password),
       isActive: data.isActive !== false ? 1 : 0,
@@ -1404,9 +1501,9 @@ class MySqlProductStore {
     };
     try {
       await this.pool.execute(
-        `INSERT INTO app_users (id, username, displayName, wechatOpenId, passwordHash, isActive, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [user.id, user.username, user.displayName, user.wechatOpenId, user.passwordHash, user.isActive, stamp, stamp]
+        `INSERT INTO app_users (id, username, displayName, role, wechatOpenId, passwordHash, isActive, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [user.id, user.username, user.displayName, user.role, user.wechatOpenId, user.passwordHash, user.isActive, stamp, stamp]
       );
     } catch (error) {
       if (error.code === 'ER_DUP_ENTRY') {
@@ -1435,6 +1532,7 @@ class MySqlProductStore {
     const next = {
       username: data.username !== undefined ? data.username : current.username,
       displayName: data.displayName !== undefined ? data.displayName || (data.username || current.username) : current.displayName,
+      role: data.role !== undefined ? data.role : (current.role === 'manager' ? 'manager' : 'staff'),
       passwordHash: data.password ? makePasswordHash(data.password) : current.passwordHash,
       isActive: data.isActive !== undefined ? (data.isActive ? 1 : 0) : current.isActive,
       updatedAt: nowIso().slice(0, 19).replace('T', ' ')
@@ -1442,9 +1540,9 @@ class MySqlProductStore {
     try {
       await this.pool.execute(
         `UPDATE app_users
-         SET username = ?, displayName = ?, passwordHash = ?, isActive = ?, updatedAt = ?
+         SET username = ?, displayName = ?, role = ?, passwordHash = ?, isActive = ?, updatedAt = ?
          WHERE id = ?`,
-        [next.username, next.displayName, next.passwordHash, next.isActive, next.updatedAt, id]
+        [next.username, next.displayName, next.role, next.passwordHash, next.isActive, next.updatedAt, id]
       );
     } catch (error) {
       if (error.code === 'ER_DUP_ENTRY') {
@@ -1572,6 +1670,90 @@ class MySqlProductStore {
       throw error;
     }
     return this.getAppUserById(id);
+  }
+
+  async listManagedAppUsers(managerId, { keyword = '', page = 1, pageSize = 50 } = {}) {
+    const [managerRows] = await this.pool.execute('SELECT * FROM app_users WHERE id = ? LIMIT 1', [managerId]);
+    const manager = managerRows[0];
+    if (!manager || !manager.isActive || manager.role !== 'manager') {
+      const error = new Error('仅店长可管理用户');
+      error.status = 403;
+      throw error;
+    }
+    const storeName = String(manager.displayName || '').trim();
+    if (!storeName) {
+      const error = new Error('当前店长账号缺少门店信息，请联系管理员配置');
+      error.status = 400;
+      throw error;
+    }
+    const offset = (Math.max(page, 1) - 1) * pageSize;
+    const hasKeyword = String(keyword || '').trim().length > 0;
+    const params = [storeName];
+    let where = `WHERE displayName = ? AND role = 'staff'`;
+    if (hasKeyword) {
+      where += ' AND (username LIKE ? OR displayName LIKE ?)';
+      params.push(`%${String(keyword || '').trim()}%`, `%${String(keyword || '').trim()}%`);
+    }
+    const [[{ total }]] = await this.pool.execute(`SELECT COUNT(*) AS total FROM app_users ${where}`, params);
+    const [rows] = await this.pool.execute(
+      `SELECT * FROM app_users ${where} ORDER BY updatedAt DESC LIMIT ? OFFSET ?`,
+      [...params, Number(pageSize), Number(offset)]
+    );
+    return { total, items: rows.map((row) => this.rowToAppUser(row)) };
+  }
+
+  async createManagedAppUser(managerId, input) {
+    const [managerRows] = await this.pool.execute('SELECT * FROM app_users WHERE id = ? LIMIT 1', [managerId]);
+    const manager = managerRows[0];
+    if (!manager || !manager.isActive || manager.role !== 'manager') {
+      const error = new Error('仅店长可新增用户');
+      error.status = 403;
+      throw error;
+    }
+    const storeName = String(manager.displayName || '').trim();
+    if (!storeName) {
+      const error = new Error('当前店长账号缺少门店信息，请联系管理员配置');
+      error.status = 400;
+      throw error;
+    }
+    const { data, errors } = validateAppUserInput({
+      username: input.username,
+      password: input.password,
+      isActive: input.isActive,
+      displayName: storeName,
+      role: 'staff'
+    });
+    if (errors.length) {
+      const error = new Error(errors.join('；'));
+      error.status = 400;
+      throw error;
+    }
+    const stamp = nowIso().slice(0, 19).replace('T', ' ');
+    const user = {
+      id: makeId(),
+      username: data.username,
+      displayName: storeName,
+      role: 'staff',
+      wechatOpenId: '',
+      passwordHash: makePasswordHash(data.password),
+      isActive: data.isActive !== false ? 1 : 0,
+      createdAt: stamp,
+      updatedAt: stamp
+    };
+    try {
+      await this.pool.execute(
+        `INSERT INTO app_users (id, username, displayName, role, wechatOpenId, passwordHash, isActive, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [user.id, user.username, user.displayName, user.role, user.wechatOpenId, user.passwordHash, user.isActive, stamp, stamp]
+      );
+    } catch (error) {
+      if (error.code === 'ER_DUP_ENTRY') {
+        error.status = 409;
+        error.message = '账号已存在';
+      }
+      throw error;
+    }
+    return this.rowToAppUser(user);
   }
 
   async getAppSettings() {

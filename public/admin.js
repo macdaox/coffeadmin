@@ -221,6 +221,7 @@ function renderUsers() {
         <tr>
           <td>${escapeHtml(item.username)}</td>
           <td>${escapeHtml(item.displayName || '-')}</td>
+          <td><span class="status ${item.role === 'manager' ? 'active' : ''}">${item.role === 'manager' ? '店长' : '普通用户'}</span></td>
           <td><span class="status ${item.wechatBound ? 'active' : 'disabled'}">${item.wechatBound ? '已绑定' : '未绑定'}</span></td>
           <td><span class="status ${item.isActive ? 'active' : 'disabled'}">${item.isActive ? '启用' : '停用'}</span></td>
           <td>${formatTime(item.updatedAt)}</td>
@@ -389,6 +390,7 @@ function openUserEditor(user) {
   document.querySelector('#userIdInput').value = user?.id || '';
   document.querySelector('#appUsernameInput').value = user?.username || '';
   document.querySelector('#displayNameInput').value = user?.displayName || '';
+  document.querySelector('#userRoleInput').value = user?.role || 'staff';
   document.querySelector('#appPasswordInput').value = '';
   document.querySelector('#appPasswordInput').required = !user;
   document.querySelector('#isActiveInput').checked = user ? Boolean(user.isActive) : true;
@@ -400,6 +402,7 @@ function getUserPayload() {
     id: document.querySelector('#userIdInput').value,
     username: document.querySelector('#appUsernameInput').value.trim(),
     displayName: document.querySelector('#displayNameInput').value.trim(),
+    role: document.querySelector('#userRoleInput').value,
     password: document.querySelector('#appPasswordInput').value,
     isActive: document.querySelector('#isActiveInput').checked
   };
