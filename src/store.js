@@ -29,7 +29,8 @@ function normalizeSearchText(text) {
 const SEARCH_ALIASES = {
   cupType: {
     标准杯: ['标准杯', '标准', '中杯'],
-    吨吨桶: ['吨吨桶', '吨吨', '桶', '大桶']
+    吨吨桶: ['吨吨桶', '吨吨', '桶', '大桶'],
+    超大杯: ['超大杯', '超大', '特大杯', '大杯王']
   },
   temperature: {
     冷: ['冷', '冰', '冰饮'],
@@ -113,7 +114,7 @@ function verifyPassword(password, storedHash) {
   if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
   const [, iterations, salt, hash] = parts;
   const candidate = crypto.pbkdf2Sync(String(password), salt, Number(iterations), 32, 'sha256').toString('hex');
-  const left = Buffer.from(candidate, 'hex');
+const left = Buffer.from(candidate, 'hex');
   const right = Buffer.from(hash, 'hex');
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
@@ -199,7 +200,7 @@ function validateProductInput(input, partial = false) {
 
   if (!partial || input.cupType !== undefined) {
     data.cupType = String(input.cupType || '').trim();
-    if (!['标准杯', '吨吨桶'].includes(data.cupType)) errors.push('杯型只能是标准杯或吨吨桶');
+    if (!['标准杯', '吨吨桶', '超大杯'].includes(data.cupType)) errors.push('杯型只能是标准杯、吨吨桶或超大杯');
   }
 
   if (!partial || input.temperature !== undefined) {
@@ -229,7 +230,9 @@ const VARIANT_KEYS = [
   { key: 'standardCold', cupType: '标准杯', temperature: '冷', label: '标准杯（冰）' },
   { key: 'standardHot', cupType: '标准杯', temperature: '热', label: '标准杯（热）' },
   { key: 'bucketCold', cupType: '吨吨桶', temperature: '冷', label: '吨吨桶（冰）' },
-  { key: 'bucketHot', cupType: '吨吨桶', temperature: '热', label: '吨吨桶（热）' }
+  { key: 'bucketHot', cupType: '吨吨桶', temperature: '热', label: '吨吨桶（热）' },
+  { key: 'megaCold', cupType: '超大杯', temperature: '冷', label: '超大杯（冰）' },
+  { key: 'megaHot', cupType: '超大杯', temperature: '热', label: '超大杯（热）' }
 ];
 
 function makeVariantKey(cupType, temperature) {

@@ -46,7 +46,7 @@ const fields = {
   category: document.querySelector('#categoryInput')
 };
 
-const variantKeys = ['standardCold', 'standardHot', 'bucketCold', 'bucketHot'];
+const variantKeys = ['standardCold', 'standardHot', 'bucketCold', 'bucketHot', 'megaCold', 'megaHot'];
 
 let products = [];
 let appUsers = [];
@@ -269,7 +269,9 @@ function renderVariantBadges(variants = {}) {
     standardCold: '标准杯冰',
     standardHot: '标准杯热',
     bucketCold: '吨吨桶冰',
-    bucketHot: '吨吨桶热'
+    bucketHot: '吨吨桶热',
+    megaCold: '超大杯冰',
+    megaHot: '超大杯热'
   };
   const enabled = variantKeys.filter((key) => variants[key]?.enabled);
   if (!enabled.length) return '<span class="muted">未配置</span>';

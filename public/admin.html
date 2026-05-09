@@ -310,6 +310,22 @@
             </div>
             <textarea data-field="method" rows="5" placeholder="1. 加热水&#10;2. 加浓缩咖啡"></textarea>
           </article>
+          <article class="variant-card" data-variant="megaCold">
+            <label class="check"><input data-field="enabled" type="checkbox" />超大杯（冰）</label>
+            <div class="variant-meta">
+              <label class="check"><input data-field="isRecommended" type="checkbox" />推荐</label>
+              <label>热度值<input data-field="hotScore" type="number" min="0" step="1" value="0" /></label>
+            </div>
+            <textarea data-field="method" rows="5" placeholder="1. 加冰&#10;2. 加配方原料至超大杯刻线"></textarea>
+          </article>
+          <article class="variant-card" data-variant="megaHot">
+            <label class="check"><input data-field="enabled" type="checkbox" />超大杯（热）</label>
+            <div class="variant-meta">
+              <label class="check"><input data-field="isRecommended" type="checkbox" />推荐</label>
+              <label>热度值<input data-field="hotScore" type="number" min="0" step="1" value="0" /></label>
+            </div>
+            <textarea data-field="method" rows="5" placeholder="1. 加热水&#10;2. 加配方原料至超大杯刻线"></textarea>
+          </article>
         </section>
         <footer>
           <button type="submit" class="primary">保存</button>
