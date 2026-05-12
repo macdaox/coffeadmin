@@ -286,6 +286,68 @@ app.get('/api/user/profile', requireAppUser, async (req, res, next) => {
   }
 });
 
+app.get('/api/user/library/summary', requireAppUser, async (req, res, next) => {
+  try {
+    ok(res, await store.getUserLibrarySummary(req.appUser.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/user/favorites', requireAppUser, async (req, res, next) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 100);
+    ok(res, await store.listUserFavorites(req.appUser.id, limit));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/user/favorites/toggle', requireAppUser, async (req, res, next) => {
+  try {
+    ok(res, await store.toggleUserFavorite(req.appUser.id, req.body || {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/user/query-logs', requireAppUser, async (req, res, next) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 100);
+    ok(res, await store.listUserQueryLogs(req.appUser.id, limit));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/user/query-logs/record', requireAppUser, async (req, res, next) => {
+  try {
+    ok(res, await store.recordUserQueryLog(req.appUser.id, req.body.query));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/user/query-logs/delete', requireAppUser, async (req, res, next) => {
+  try {
+    const query = String(req.body.query || req.query.query || '').trim();
+    if (!query) return fail(res, 400, '缺少查询内容');
+    await store.deleteUserQueryLog(req.appUser.id, query);
+    ok(res, true);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/user/query-logs/clear', requireAppUser, async (req, res, next) => {
+  try {
+    await store.clearUserQueryLogs(req.appUser.id);
+    ok(res, true);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/app/settings', async (req, res, next) => {
   try {
     ok(res, await store.getAppSettings());
@@ -562,6 +624,15 @@ app.get('/api/admin/glossary/learn-stats', requireAdmin, async (req, res, next) 
   try {
     const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 50);
     ok(res, await store.listGlossaryLearnStats(limit));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/favorite-rank', requireAdmin, async (req, res, next) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 50);
+    ok(res, await store.listFavoriteRank(limit));
   } catch (error) {
     next(error);
   }

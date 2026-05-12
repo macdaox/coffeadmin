@@ -26,6 +26,40 @@ function normalizeSearchText(text) {
     .replace(/[\s\-_/()（）·,，.。]/g, '');
 }
 
+function formatTemperatureLabel(value) {
+  return value === '冷' ? '冰' : String(value || '').trim();
+}
+
+function buildLibraryQuery(input = {}) {
+  const name = String(input.name || '').trim();
+  const cupType = String(input.cupType || '').trim();
+  const temperatureLabel = String(input.temperatureLabel || formatTemperatureLabel(input.temperature)).trim();
+  return `${name}${cupType}${temperatureLabel}`.trim();
+}
+
+function toPublicFavorite(item) {
+  return {
+    id: item.id,
+    query: buildLibraryQuery(item) || String(item.query || '').trim(),
+    name: String(item.name || '').trim(),
+    cupType: String(item.cupType || '').trim(),
+    temperature: String(item.temperature || '').trim(),
+    temperatureLabel: formatTemperatureLabel(item.temperature),
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt
+  };
+}
+
+function toPublicQueryLog(item) {
+  return {
+    id: item.id,
+    query: String(item.query || '').trim(),
+    count: Number(item.count || 1),
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt
+  };
+}
+
 const SEARCH_ALIASES = {
   cupType: {
     标准杯: ['标准杯', '标准', '中杯'],
@@ -344,11 +378,15 @@ class JsonProductStore {
     this.appSettingsFilePath = path.join(path.dirname(this.filePath), 'app-settings.json');
     this.glossaryLogFilePath = path.join(path.dirname(this.filePath), 'glossary-learn-logs.json');
     this.categoryFilePath = path.join(path.dirname(this.filePath), 'product-categories.json');
+    this.favoriteFilePath = path.join(path.dirname(this.filePath), 'user-favorites.json');
+    this.queryLogFilePath = path.join(path.dirname(this.filePath), 'user-query-logs.json');
     this.products = [];
     this.adminUsers = [];
     this.appUsers = [];
     this.glossaryLearnLogs = [];
     this.categories = [];
+    this.userFavorites = [];
+    this.userQueryLogs = [];
     this.appSettings = {
       logoUrl: ''
     };
@@ -376,6 +414,8 @@ class JsonProductStore {
     await this.initAppSettings();
     await this.initGlossaryLearnLogs();
     await this.initCategories();
+    await this.initUserFavorites();
+    await this.initUserQueryLogs();
   }
 
   async save() {
@@ -400,6 +440,14 @@ class JsonProductStore {
 
   async saveCategories() {
     await fs.writeFile(this.categoryFilePath, JSON.stringify(this.categories, null, 2));
+  }
+
+  async saveUserFavorites() {
+    await fs.writeFile(this.favoriteFilePath, JSON.stringify(this.userFavorites, null, 2));
+  }
+
+  async saveUserQueryLogs() {
+    await fs.writeFile(this.queryLogFilePath, JSON.stringify(this.userQueryLogs, null, 2));
   }
 
   async initAdminUsers() {
@@ -471,6 +519,26 @@ class JsonProductStore {
     } catch (error) {
       this.categories = [...new Set(this.products.map((item) => normalizeCategoryName(item.category)).filter(Boolean))];
       await this.saveCategories();
+    }
+  }
+
+  async initUserFavorites() {
+    try {
+      const raw = await fs.readFile(this.favoriteFilePath, 'utf8');
+      this.userFavorites = JSON.parse(raw);
+    } catch (error) {
+      this.userFavorites = [];
+      await this.saveUserFavorites();
+    }
+  }
+
+  async initUserQueryLogs() {
+    try {
+      const raw = await fs.readFile(this.queryLogFilePath, 'utf8');
+      this.userQueryLogs = JSON.parse(raw);
+    } catch (error) {
+      this.userQueryLogs = [];
+      await this.saveUserQueryLogs();
     }
   }
 
@@ -771,7 +839,11 @@ class JsonProductStore {
       error.status = 404;
       throw error;
     }
+    this.userFavorites = this.userFavorites.filter((item) => String(item.userId || '') !== String(id));
+    this.userQueryLogs = this.userQueryLogs.filter((item) => String(item.userId || '') !== String(id));
     await this.saveAppUsers();
+    await this.saveUserFavorites();
+    await this.saveUserQueryLogs();
     return true;
   }
 
@@ -948,6 +1020,138 @@ class JsonProductStore {
     return toPublicAppUser(user);
   }
 
+  async listUserFavorites(userId, limit = 50) {
+    return this.userFavorites
+      .filter((item) => String(item.userId || '').trim() === String(userId || '').trim())
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+      .slice(0, limit)
+      .map(toPublicFavorite);
+  }
+
+  async toggleUserFavorite(userId, input) {
+    const normalizedUserId = String(userId || '').trim();
+    const name = String(input.name || '').trim();
+    const cupType = String(input.cupType || '').trim();
+    const temperature = String(input.temperature || '').trim();
+    const query = buildLibraryQuery({ name, cupType, temperature, temperatureLabel: input.temperatureLabel });
+    if (!normalizedUserId || !query || !name || !cupType || !temperature) {
+      const error = new Error('缺少收藏信息');
+      error.status = 400;
+      throw error;
+    }
+    const index = this.userFavorites.findIndex((item) => String(item.userId || '') === normalizedUserId && String(item.query || '') === query);
+    if (index >= 0) {
+      this.userFavorites.splice(index, 1);
+      await this.saveUserFavorites();
+      return { favorited: false };
+    }
+    this.userFavorites.unshift({
+      id: makeId(),
+      userId: normalizedUserId,
+      query,
+      name,
+      cupType,
+      temperature,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    });
+    await this.saveUserFavorites();
+    return { favorited: true };
+  }
+
+  async getUserLibrarySummary(userId) {
+    const normalizedUserId = String(userId || '').trim();
+    return {
+      favoriteCount: this.userFavorites.filter((item) => String(item.userId || '') === normalizedUserId).length,
+      recentCount: this.userQueryLogs.filter((item) => String(item.userId || '') === normalizedUserId).length
+    };
+  }
+
+  async recordUserQueryLog(userId, query) {
+    const normalizedUserId = String(userId || '').trim();
+    const value = String(query || '').trim();
+    if (!normalizedUserId || !value) {
+      const error = new Error('缺少查询内容');
+      error.status = 400;
+      throw error;
+    }
+    const index = this.userQueryLogs.findIndex((item) => String(item.userId || '') === normalizedUserId && String(item.query || '') === value);
+    if (index >= 0) {
+      this.userQueryLogs[index] = {
+        ...this.userQueryLogs[index],
+        count: Number(this.userQueryLogs[index].count || 1) + 1,
+        updatedAt: nowIso()
+      };
+    } else {
+      this.userQueryLogs.unshift({
+        id: makeId(),
+        userId: normalizedUserId,
+        query: value,
+        count: 1,
+        createdAt: nowIso(),
+        updatedAt: nowIso()
+      });
+    }
+    await this.saveUserQueryLogs();
+    return { recorded: true };
+  }
+
+  async listUserQueryLogs(userId, limit = 50) {
+    return this.userQueryLogs
+      .filter((item) => String(item.userId || '').trim() === String(userId || '').trim())
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+      .slice(0, limit)
+      .map(toPublicQueryLog);
+  }
+
+  async deleteUserQueryLog(userId, query) {
+    const normalizedUserId = String(userId || '').trim();
+    const value = String(query || '').trim();
+    const before = this.userQueryLogs.length;
+    this.userQueryLogs = this.userQueryLogs.filter((item) => !(String(item.userId || '') === normalizedUserId && String(item.query || '') === value));
+    if (before === this.userQueryLogs.length) {
+      const error = new Error('记录不存在');
+      error.status = 404;
+      throw error;
+    }
+    await this.saveUserQueryLogs();
+    return true;
+  }
+
+  async clearUserQueryLogs(userId) {
+    const normalizedUserId = String(userId || '').trim();
+    this.userQueryLogs = this.userQueryLogs.filter((item) => String(item.userId || '') !== normalizedUserId);
+    await this.saveUserQueryLogs();
+    return true;
+  }
+
+  async listFavoriteRank(limit = 10) {
+    const counter = new Map();
+    this.userFavorites.forEach((item) => {
+      const key = String(item.query || '').trim();
+      if (!key) return;
+      const current = counter.get(key) || {
+        query: key,
+        name: item.name,
+        cupType: item.cupType,
+        temperature: item.temperature,
+        favoriteCount: 0,
+        lastFavoritedAt: item.updatedAt
+      };
+      current.favoriteCount += 1;
+      if (new Date(item.updatedAt) > new Date(current.lastFavoritedAt)) {
+        current.lastFavoritedAt = item.updatedAt;
+      }
+      counter.set(key, current);
+    });
+    return [...counter.values()]
+      .sort((a, b) => {
+        if (b.favoriteCount !== a.favoriteCount) return b.favoriteCount - a.favoriteCount;
+        return new Date(b.lastFavoritedAt) - new Date(a.lastFavoritedAt);
+      })
+      .slice(0, limit);
+  }
+
   async getAppSettings() {
     return {
       logoUrl: String(this.appSettings.logoUrl || '').trim()
@@ -1062,6 +1266,8 @@ class MySqlProductStore {
     await this.initAppSettings();
     await this.initGlossaryLearnLogs();
     await this.initCategories();
+    await this.initUserFavorites();
+    await this.initUserQueryLogs();
   }
 
   async ensureProductCategoryColumn() {
@@ -1158,6 +1364,39 @@ class MySqlProductStore {
         createdAt DATETIME NOT NULL,
         INDEX idx_glossary_term (term),
         INDEX idx_glossary_created (createdAt)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+  }
+
+  async initUserFavorites() {
+    await this.pool.execute(`
+      CREATE TABLE IF NOT EXISTS user_favorites (
+        id VARCHAR(64) PRIMARY KEY,
+        userId VARCHAR(64) NOT NULL,
+        query VARCHAR(255) NOT NULL,
+        name VARCHAR(128) NOT NULL,
+        cupType VARCHAR(32) NOT NULL,
+        temperature VARCHAR(16) NOT NULL,
+        createdAt DATETIME NOT NULL,
+        updatedAt DATETIME NOT NULL,
+        UNIQUE KEY uniq_user_favorite (userId, query),
+        INDEX idx_user_favorites_updated (updatedAt),
+        INDEX idx_user_favorites_name (name)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+  }
+
+  async initUserQueryLogs() {
+    await this.pool.execute(`
+      CREATE TABLE IF NOT EXISTS user_query_logs (
+        id VARCHAR(64) PRIMARY KEY,
+        userId VARCHAR(64) NOT NULL,
+        query VARCHAR(255) NOT NULL,
+        count INT NOT NULL DEFAULT 1,
+        createdAt DATETIME NOT NULL,
+        updatedAt DATETIME NOT NULL,
+        UNIQUE KEY uniq_user_query_log (userId, query),
+        INDEX idx_user_query_logs_updated (updatedAt)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
   }
@@ -1565,6 +1804,8 @@ class MySqlProductStore {
       error.status = 404;
       throw error;
     }
+    await this.pool.execute('DELETE FROM user_favorites WHERE userId = ?', [id]);
+    await this.pool.execute('DELETE FROM user_query_logs WHERE userId = ?', [id]);
     return true;
   }
 
@@ -1757,6 +1998,139 @@ class MySqlProductStore {
       throw error;
     }
     return this.rowToAppUser(user);
+  }
+
+  async listUserFavorites(userId, limit = 50) {
+    const [rows] = await this.pool.execute(
+      `SELECT * FROM user_favorites WHERE userId = ? ORDER BY updatedAt DESC LIMIT ?`,
+      [String(userId || '').trim(), Math.max(1, Math.min(Number(limit || 50), 100))]
+    );
+    return rows.map((row) =>
+      toPublicFavorite({
+        ...row,
+        createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+        updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt
+      })
+    );
+  }
+
+  async toggleUserFavorite(userId, input) {
+    const normalizedUserId = String(userId || '').trim();
+    const name = String(input.name || '').trim();
+    const cupType = String(input.cupType || '').trim();
+    const temperature = String(input.temperature || '').trim();
+    const query = buildLibraryQuery({ name, cupType, temperature, temperatureLabel: input.temperatureLabel });
+    if (!normalizedUserId || !query || !name || !cupType || !temperature) {
+      const error = new Error('缺少收藏信息');
+      error.status = 400;
+      throw error;
+    }
+    const [existingRows] = await this.pool.execute(
+      `SELECT id FROM user_favorites WHERE userId = ? AND query = ? LIMIT 1`,
+      [normalizedUserId, query]
+    );
+    if (existingRows[0]) {
+      await this.pool.execute(`DELETE FROM user_favorites WHERE userId = ? AND query = ?`, [normalizedUserId, query]);
+      return { favorited: false };
+    }
+    const stamp = nowIso().slice(0, 19).replace('T', ' ');
+    await this.pool.execute(
+      `INSERT INTO user_favorites (id, userId, query, name, cupType, temperature, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [makeId(), normalizedUserId, query, name, cupType, temperature, stamp, stamp]
+    );
+    return { favorited: true };
+  }
+
+  async getUserLibrarySummary(userId) {
+    const normalizedUserId = String(userId || '').trim();
+    const [[favoriteRow]] = await this.pool.execute(`SELECT COUNT(*) AS total FROM user_favorites WHERE userId = ?`, [normalizedUserId]);
+    const [[recentRow]] = await this.pool.execute(`SELECT COUNT(*) AS total FROM user_query_logs WHERE userId = ?`, [normalizedUserId]);
+    return {
+      favoriteCount: Number(favoriteRow.total || 0),
+      recentCount: Number(recentRow.total || 0)
+    };
+  }
+
+  async recordUserQueryLog(userId, query) {
+    const normalizedUserId = String(userId || '').trim();
+    const value = String(query || '').trim();
+    if (!normalizedUserId || !value) {
+      const error = new Error('缺少查询内容');
+      error.status = 400;
+      throw error;
+    }
+    const stamp = nowIso().slice(0, 19).replace('T', ' ');
+    const [existingRows] = await this.pool.execute(
+      `SELECT id, count FROM user_query_logs WHERE userId = ? AND query = ? LIMIT 1`,
+      [normalizedUserId, value]
+    );
+    if (existingRows[0]) {
+      await this.pool.execute(
+        `UPDATE user_query_logs SET count = ?, updatedAt = ? WHERE id = ?`,
+        [Number(existingRows[0].count || 1) + 1, stamp, existingRows[0].id]
+      );
+    } else {
+      await this.pool.execute(
+        `INSERT INTO user_query_logs (id, userId, query, count, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [makeId(), normalizedUserId, value, 1, stamp, stamp]
+      );
+    }
+    return { recorded: true };
+  }
+
+  async listUserQueryLogs(userId, limit = 50) {
+    const [rows] = await this.pool.execute(
+      `SELECT * FROM user_query_logs WHERE userId = ? ORDER BY updatedAt DESC LIMIT ?`,
+      [String(userId || '').trim(), Math.max(1, Math.min(Number(limit || 50), 100))]
+    );
+    return rows.map((row) =>
+      toPublicQueryLog({
+        ...row,
+        createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+        updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt
+      })
+    );
+  }
+
+  async deleteUserQueryLog(userId, query) {
+    const [result] = await this.pool.execute(
+      `DELETE FROM user_query_logs WHERE userId = ? AND query = ?`,
+      [String(userId || '').trim(), String(query || '').trim()]
+    );
+    if (result.affectedRows === 0) {
+      const error = new Error('记录不存在');
+      error.status = 404;
+      throw error;
+    }
+    return true;
+  }
+
+  async clearUserQueryLogs(userId) {
+    await this.pool.execute(`DELETE FROM user_query_logs WHERE userId = ?`, [String(userId || '').trim()]);
+    return true;
+  }
+
+  async listFavoriteRank(limit = 10) {
+    const safeLimit = Math.max(1, Math.min(Number(limit || 10), 50));
+    const [rows] = await this.pool.execute(
+      `SELECT query, MAX(name) AS name, MAX(cupType) AS cupType, MAX(temperature) AS temperature,
+              COUNT(*) AS favoriteCount, MAX(updatedAt) AS lastFavoritedAt
+       FROM user_favorites
+       GROUP BY query
+       ORDER BY favoriteCount DESC, lastFavoritedAt DESC
+       LIMIT ?`,
+      [safeLimit]
+    );
+    return rows.map((item) => ({
+      query: item.query,
+      name: item.name,
+      cupType: item.cupType,
+      temperature: item.temperature,
+      favoriteCount: Number(item.favoriteCount || 0),
+      lastFavoritedAt: item.lastFavoritedAt instanceof Date ? item.lastFavoritedAt.toISOString() : item.lastFavoritedAt
+    }));
   }
 
   async getAppSettings() {

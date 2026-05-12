@@ -37,6 +37,7 @@ const dashboardActiveUserCountEl = document.querySelector('#dashboardActiveUserC
 const dashboardGlossaryCountEl = document.querySelector('#dashboardGlossaryCount');
 const dashboardRecentProductsEl = document.querySelector('#dashboardRecentProducts');
 const dashboardCategoryStatsEl = document.querySelector('#dashboardCategoryStats');
+const dashboardFavoriteRankEl = document.querySelector('#dashboardFavoriteRank');
 const toastEl = document.querySelector('#toast');
 
 const fields = {
@@ -52,6 +53,7 @@ let products = [];
 let appUsers = [];
 let categories = [];
 let glossaryStats = { total: 0, topTerms: [], recentLogs: [] };
+let favoriteRank = [];
 
 function renderDashboard() {
   dashboardProductCountEl.textContent = String(products.length);
@@ -98,6 +100,23 @@ function renderDashboard() {
                 <div class="dashboard-item-subtitle">该分类下产品数</div>
               </div>
               <div class="dashboard-item-side">${count} 个</div>
+            </div>
+          `
+        )
+        .join('')
+    : '暂无数据';
+
+  dashboardFavoriteRankEl.classList.toggle('empty-inline', favoriteRank.length === 0);
+  dashboardFavoriteRankEl.innerHTML = favoriteRank.length
+    ? favoriteRank
+        .map(
+          (item, index) => `
+            <div class="dashboard-item">
+              <div class="dashboard-item-main">
+                <div class="dashboard-item-title">${index + 1}. ${escapeHtml(item.name || item.query)}</div>
+                <div class="dashboard-item-subtitle">${escapeHtml(item.cupType || '')} · ${escapeHtml(item.temperature === '冷' ? '冰' : item.temperature || '')}</div>
+              </div>
+              <div class="dashboard-item-side">${Number(item.favoriteCount || 0)} 次</div>
             </div>
           `
         )
@@ -318,6 +337,12 @@ async function loadGlossaryStats() {
   renderGlossaryStats(json.data || { total: 0, topTerms: [], recentLogs: [] });
 }
 
+async function loadFavoriteRank() {
+  const json = await request('/api/admin/favorite-rank?limit=10');
+  favoriteRank = json.data || [];
+  renderDashboard();
+}
+
 function openEditor(product) {
   document.querySelector('#dialogTitle').textContent = product ? '编辑产品' : '新增产品';
   fields.id.value = product?.id || '';
@@ -466,7 +491,7 @@ loginForm.addEventListener('submit', async (event) => {
     passwordInput.value = '';
     showAdmin();
     setActiveSection('dashboardSection');
-    await Promise.all([loadCategories(), loadProducts(), loadAppUsers(), loadSettings(), loadGlossaryStats()]);
+    await Promise.all([loadCategories(), loadProducts(), loadAppUsers(), loadSettings(), loadGlossaryStats(), loadFavoriteRank()]);
   } catch (error) {
     toast(error.message);
   }
@@ -482,6 +507,7 @@ logoutBtn.addEventListener('click', async () => {
   appUsers = [];
   categories = [];
   glossaryStats = { total: 0, topTerms: [], recentLogs: [] };
+  favoriteRank = [];
   render();
   renderUsers();
   renderCategories();
@@ -611,7 +637,7 @@ async function bootstrap() {
     await request('/api/admin/session');
     showAdmin();
     setActiveSection('dashboardSection');
-    const results = await Promise.allSettled([loadCategories(), loadProducts(), loadAppUsers(), loadSettings(), loadGlossaryStats()]);
+    const results = await Promise.allSettled([loadCategories(), loadProducts(), loadAppUsers(), loadSettings(), loadGlossaryStats(), loadFavoriteRank()]);
     const failed = results.find((item) => item.status === 'rejected');
     if (failed) {
       toast(failed.reason?.message || '部分数据加载失败');
