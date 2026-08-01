@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS products (
   id VARCHAR(64) PRIMARY KEY,
   name VARCHAR(128) NOT NULL,
+  version VARCHAR(8) NOT NULL DEFAULT '1.0',
   cupType VARCHAR(32) NOT NULL,
   temperature VARCHAR(16) NOT NULL,
   method TEXT NOT NULL,
@@ -9,6 +10,7 @@ CREATE TABLE IF NOT EXISTS products (
   createdAt DATETIME NOT NULL,
   updatedAt DATETIME NOT NULL,
   INDEX idx_name (name),
+  INDEX idx_version_name (version, name),
   INDEX idx_recommend_hot (isRecommended, hotScore),
   INDEX idx_updated (updatedAt)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

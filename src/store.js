@@ -153,11 +153,30 @@ const left = Buffer.from(candidate, 'hex');
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
+const PRODUCT_VERSIONS = ['1.0', '2.0'];
+
+function normalizeProductVersion(value = '1.0') {
+  const version = String(value || '1.0').trim() || '1.0';
+  if (!PRODUCT_VERSIONS.includes(version)) {
+    const error = new Error('产品版本只能是 1.0 或 2.0');
+    error.status = 400;
+    throw error;
+  }
+  return version;
+}
+
+function normalizeProductName(value, version) {
+  const name = String(value || '').trim();
+  if (normalizeProductVersion(version) !== '2.0' || name.startsWith('[2.0]')) return name;
+  return `[2.0]${name}`;
+}
+
 function toPublicProduct(product) {
   if (!product) return null;
   return {
     id: product.id,
     name: product.name,
+    version: normalizeProductVersion(product.version),
     category: String(product.category || '').trim(),
     cupType: product.cupType,
     temperature: product.temperature,
@@ -299,6 +318,7 @@ function productsToGroups(products) {
     if (!map.has(publicProduct.name)) {
       map.set(publicProduct.name, {
         name: publicProduct.name,
+        version: publicProduct.version,
         category: publicProduct.category,
         variants: emptyVariants(),
         isRecommended: false,
@@ -332,7 +352,8 @@ function normalizeCategoryName(value) {
 }
 
 function validateProductGroupInput(input) {
-  const name = String(input.name || '').trim();
+  const version = normalizeProductVersion(input.version);
+  const name = normalizeProductName(input.name, version);
   const category = String(input.category || '').trim();
   const errors = [];
   if (!name) errors.push('品名不能为空');
@@ -362,8 +383,9 @@ function validateProductGroupInput(input) {
   return {
     data: {
       name,
+      version,
       category,
-      previousName: String(input.previousName || input.name || '').trim(),
+      previousName: normalizeProductName(input.previousName || input.name, version),
       variants: normalized
     },
     errors
@@ -396,14 +418,19 @@ class JsonProductStore {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
     try {
       const raw = await fs.readFile(this.filePath, 'utf8');
-      this.products = JSON.parse(raw).map((item) => ({
+      const parsed = JSON.parse(raw);
+      const needsVersionMigration = parsed.some((item) => !item.version);
+      this.products = parsed.map((item) => ({
         ...item,
+        version: normalizeProductVersion(item.version),
         category: String(item.category || '').trim()
       }));
+      if (needsVersionMigration) await this.save();
     } catch (error) {
       const stamp = nowIso();
       this.products = sampleProducts.map((item) => ({
         ...item,
+        version: '1.0',
         createdAt: stamp,
         updatedAt: stamp
       }));
@@ -542,9 +569,11 @@ class JsonProductStore {
     }
   }
 
-  async list({ keyword = '', page = 1, pageSize = 20 } = {}) {
+  async list({ keyword = '', version = '1.0', page = 1, pageSize = 20 } = {}) {
     const q = normalizeKeyword(keyword);
+    const productVersion = normalizeProductVersion(version);
     const filtered = this.products
+      .filter((item) => normalizeProductVersion(item.version) === productVersion)
       .filter((item) => !q || item.name.toLowerCase().includes(q) || String(item.category || '').toLowerCase().includes(q))
       .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
     const start = (Math.max(page, 1) - 1) * pageSize;
@@ -554,10 +583,13 @@ class JsonProductStore {
     };
   }
 
-  async listGroups({ keyword = '', category = '', page = 1, pageSize = 20 } = {}) {
+  async listGroups({ keyword = '', category = '', version = '1.0', page = 1, pageSize = 20 } = {}) {
     const q = normalizeKeyword(keyword);
     const categoryName = normalizeCategoryName(category);
-    const filtered = productsToGroups(this.products).filter(
+    const productVersion = normalizeProductVersion(version);
+    const filtered = productsToGroups(
+      this.products.filter((item) => normalizeProductVersion(item.version) === productVersion)
+    ).filter(
       (item) =>
         (!q || item.name.toLowerCase().includes(q) || String(item.category || '').toLowerCase().includes(q)) &&
         (!categoryName || String(item.category || '') === categoryName)
@@ -569,16 +601,24 @@ class JsonProductStore {
     };
   }
 
-  async search(keyword) {
-    return toPublicProduct(findBestMatchingProduct(this.products, keyword));
+  async search(keyword, version = '1.0') {
+    const productVersion = normalizeProductVersion(version);
+    return toPublicProduct(
+      findBestMatchingProduct(
+        this.products.filter((item) => normalizeProductVersion(item.version) === productVersion),
+        keyword
+      )
+    );
   }
 
-  async recommend(limit = 8) {
-    const recommended = this.products
+  async recommend(limit = 8, version = '1.0') {
+    const productVersion = normalizeProductVersion(version);
+    const versionProducts = this.products.filter((item) => normalizeProductVersion(item.version) === productVersion);
+    const recommended = versionProducts
       .filter((item) => item.isRecommended)
       .sort((a, b) => b.hotScore - a.hotScore);
     const ids = new Set(recommended.map((item) => item.id));
-    const hot = this.products
+    const hot = versionProducts
       .filter((item) => !ids.has(item.id))
       .sort((a, b) => b.hotScore - a.hotScore);
     return [...recommended, ...hot].slice(0, limit).map(({ id, name, cupType, temperature }) => ({
@@ -589,8 +629,10 @@ class JsonProductStore {
     }));
   }
 
-  async hot(limit = 8) {
-    return [...this.products]
+  async hot(limit = 8, version = '1.0') {
+    const productVersion = normalizeProductVersion(version);
+    return this.products
+      .filter((item) => normalizeProductVersion(item.version) === productVersion)
       .sort((a, b) => {
         if (Number(b.hotScore || 0) !== Number(a.hotScore || 0)) {
           return Number(b.hotScore || 0) - Number(a.hotScore || 0);
@@ -660,16 +702,25 @@ class JsonProductStore {
     const stamp = nowIso();
     const existingByKey = new Map(
       this.products
-        .filter((item) => item.name === data.previousName || item.name === data.name)
+        .filter(
+          (item) =>
+            normalizeProductVersion(item.version) === data.version &&
+            (item.name === data.previousName || item.name === data.name)
+        )
         .map((item) => [makeVariantKey(item.cupType, item.temperature), item])
     );
-    const nextProducts = this.products.filter((item) => item.name !== data.previousName && item.name !== data.name);
+    const nextProducts = this.products.filter(
+      (item) =>
+        normalizeProductVersion(item.version) !== data.version ||
+        (item.name !== data.previousName && item.name !== data.name)
+    );
     for (const variant of data.variants) {
       const key = makeVariantKey(variant.cupType, variant.temperature);
       const existing = existingByKey.get(key);
       nextProducts.push({
         id: existing?.id || variant.id || makeId(),
         name: data.name,
+        version: data.version,
         category: data.category,
         cupType: variant.cupType,
         temperature: variant.temperature,
@@ -687,13 +738,16 @@ class JsonProductStore {
       this.categories.sort((a, b) => a.localeCompare(b, 'zh-CN'));
       await this.saveCategories();
     }
-    const groups = await this.listGroups({ keyword: data.name, page: 1, pageSize: 1 });
+    const groups = await this.listGroups({ keyword: data.name, version: data.version, page: 1, pageSize: 1 });
     return groups.items[0];
   }
 
-  async deleteGroup(name) {
+  async deleteGroup(name, version = '1.0') {
+    const productVersion = normalizeProductVersion(version);
     const before = this.products.length;
-    this.products = this.products.filter((item) => item.name !== name);
+    this.products = this.products.filter(
+      (item) => item.name !== name || normalizeProductVersion(item.version) !== productVersion
+    );
     if (this.products.length === before) {
       const error = new Error('产品不存在');
       error.status = 404;
@@ -1241,6 +1295,7 @@ class MySqlProductStore {
       CREATE TABLE IF NOT EXISTS products (
         id VARCHAR(64) PRIMARY KEY,
         name VARCHAR(128) NOT NULL,
+        version VARCHAR(8) NOT NULL DEFAULT '1.0',
         category VARCHAR(64) NOT NULL DEFAULT '',
         cupType VARCHAR(32) NOT NULL,
         temperature VARCHAR(16) NOT NULL,
@@ -1250,11 +1305,13 @@ class MySqlProductStore {
         createdAt DATETIME NOT NULL,
         updatedAt DATETIME NOT NULL,
         INDEX idx_name (name),
+        INDEX idx_version_name (version, name),
         INDEX idx_recommend_hot (isRecommended, hotScore),
         INDEX idx_updated (updatedAt)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
     await this.ensureProductCategoryColumn();
+    await this.ensureProductVersionColumn();
     const [[{ count }]] = await this.pool.execute('SELECT COUNT(*) AS count FROM products');
     if (count === 0) {
       for (const item of sampleProducts) {
@@ -1274,6 +1331,18 @@ class MySqlProductStore {
     const [rows] = await this.pool.execute(`SHOW COLUMNS FROM products LIKE 'category'`);
     if (rows.length > 0) return;
     await this.pool.execute(`ALTER TABLE products ADD COLUMN category VARCHAR(64) NOT NULL DEFAULT '' AFTER name`);
+  }
+
+  async ensureProductVersionColumn() {
+    const [rows] = await this.pool.execute(`SHOW COLUMNS FROM products LIKE 'version'`);
+    if (rows.length === 0) {
+      await this.pool.execute(`ALTER TABLE products ADD COLUMN version VARCHAR(8) NOT NULL DEFAULT '1.0' AFTER name`);
+    }
+    await this.pool.execute(`UPDATE products SET version = '1.0' WHERE version IS NULL OR version = ''`);
+    const [indexes] = await this.pool.execute(`SHOW INDEX FROM products WHERE Key_name = 'idx_version_name'`);
+    if (indexes.length === 0) {
+      await this.pool.execute(`ALTER TABLE products ADD INDEX idx_version_name (version, name)`);
+    }
   }
 
   async initAdminUsers() {
@@ -1440,12 +1509,13 @@ class MySqlProductStore {
     });
   }
 
-  async list({ keyword = '', page = 1, pageSize = 20 } = {}) {
+  async list({ keyword = '', version = '1.0', page = 1, pageSize = 20 } = {}) {
     const offset = (Math.max(page, 1) - 1) * pageSize;
+    const productVersion = normalizeProductVersion(version);
     const q = `%${String(keyword || '').trim()}%`;
     const hasKeyword = String(keyword || '').trim().length > 0;
-    const where = hasKeyword ? 'WHERE name LIKE ? OR category LIKE ?' : '';
-    const params = hasKeyword ? [q, q] : [];
+    const where = hasKeyword ? 'WHERE version = ? AND (name LIKE ? OR category LIKE ?)' : 'WHERE version = ?';
+    const params = hasKeyword ? [productVersion, q, q] : [productVersion];
     const [[{ total }]] = await this.pool.execute(`SELECT COUNT(*) AS total FROM products ${where}`, params);
     const [rows] = await this.pool.execute(
       `SELECT * FROM products ${where} ORDER BY updatedAt DESC LIMIT ? OFFSET ?`,
@@ -1454,12 +1524,13 @@ class MySqlProductStore {
     return { total, items: rows.map((row) => this.rowToProduct(row)) };
   }
 
-  async listGroups({ keyword = '', category = '', page = 1, pageSize = 20 } = {}) {
+  async listGroups({ keyword = '', category = '', version = '1.0', page = 1, pageSize = 20 } = {}) {
     const offset = (Math.max(page, 1) - 1) * pageSize;
     const hasKeyword = String(keyword || '').trim().length > 0;
     const categoryName = normalizeCategoryName(category);
-    const params = [];
-    const clauses = [];
+    const productVersion = normalizeProductVersion(version);
+    const params = [productVersion];
+    const clauses = ['version = ?'];
     if (hasKeyword) {
       clauses.push('(name LIKE ? OR category LIKE ?)');
       params.push(`%${String(keyword || '').trim()}%`, `%${String(keyword || '').trim()}%`);
@@ -1482,41 +1553,51 @@ class MySqlProductStore {
     if (nameRows.length === 0) return { total, items: [] };
     const names = nameRows.map((row) => row.name);
     const placeholders = names.map(() => '?').join(',');
-    const [rows] = await this.pool.execute(`SELECT * FROM products WHERE name IN (${placeholders})`, names);
+    const [rows] = await this.pool.execute(
+      `SELECT * FROM products WHERE version = ? AND name IN (${placeholders})`,
+      [productVersion, ...names]
+    );
     const groups = productsToGroups(rows.map((row) => this.rowToProduct(row)));
     groups.sort((a, b) => names.indexOf(a.name) - names.indexOf(b.name));
     return { total, items: groups };
   }
 
-  async search(keyword) {
+  async search(keyword, version = '1.0') {
     const trimmed = String(keyword || '').trim();
     if (!trimmed) return null;
+    const productVersion = normalizeProductVersion(version);
     const [rows] = await this.pool.execute(
       `SELECT * FROM products
+       WHERE version = ?
        ORDER BY hotScore DESC, updatedAt DESC
-       LIMIT 500`
+       LIMIT 500`,
+      [productVersion]
     );
     return findBestMatchingProduct(rows.map((row) => this.rowToProduct(row)), trimmed);
   }
 
-  async recommend(limit = 8) {
+  async recommend(limit = 8, version = '1.0') {
+    const productVersion = normalizeProductVersion(version);
     const [rows] = await this.pool.execute(
-      `SELECT id, name, cupType, temperature
+      `SELECT id, name, version, cupType, temperature
        FROM products
+       WHERE version = ?
        ORDER BY isRecommended DESC, hotScore DESC, updatedAt DESC
        LIMIT ?`,
-      [Number(limit)]
+      [productVersion, Number(limit)]
     );
     return rows;
   }
 
-  async hot(limit = 8) {
+  async hot(limit = 8, version = '1.0') {
+    const productVersion = normalizeProductVersion(version);
     const [rows] = await this.pool.execute(
-      `SELECT id, name, cupType, temperature
+      `SELECT id, name, version, cupType, temperature
        FROM products
+       WHERE version = ?
        ORDER BY hotScore DESC, updatedAt DESC
        LIMIT ?`,
-      [Number(limit)]
+      [productVersion, Number(limit)]
     );
     return rows;
   }
@@ -1531,9 +1612,9 @@ class MySqlProductStore {
     const id = input.id || makeId();
     const stamp = nowIso().slice(0, 19).replace('T', ' ');
     await this.pool.execute(
-      `INSERT INTO products (id, name, category, cupType, temperature, method, isRecommended, hotScore, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, data.name, data.category || '', data.cupType, data.temperature, data.method, data.isRecommended ? 1 : 0, data.hotScore, stamp, stamp]
+      `INSERT INTO products (id, name, version, category, cupType, temperature, method, isRecommended, hotScore, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, data.name, normalizeProductVersion(input.version), data.category || '', data.cupType, data.temperature, data.method, data.isRecommended ? 1 : 0, data.hotScore, stamp, stamp]
     );
     return this.search(data.name);
   }
@@ -1599,22 +1680,23 @@ class MySqlProductStore {
       const names = [...new Set([data.previousName, data.name].filter(Boolean))];
       const placeholders = names.map(() => '?').join(',');
       const [existingRows] = names.length
-        ? await conn.execute(`SELECT * FROM products WHERE name IN (${placeholders})`, names)
+        ? await conn.execute(`SELECT * FROM products WHERE version = ? AND name IN (${placeholders})`, [data.version, ...names])
         : [[]];
       const existingByKey = new Map(existingRows.map((row) => [makeVariantKey(row.cupType, row.temperature), this.rowToProduct(row)]));
       if (names.length) {
-        await conn.execute(`DELETE FROM products WHERE name IN (${placeholders})`, names);
+        await conn.execute(`DELETE FROM products WHERE version = ? AND name IN (${placeholders})`, [data.version, ...names]);
       }
       const stamp = nowIso().slice(0, 19).replace('T', ' ');
       for (const variant of data.variants) {
         const key = makeVariantKey(variant.cupType, variant.temperature);
         const existing = existingByKey.get(key);
         await conn.execute(
-          `INSERT INTO products (id, name, category, cupType, temperature, method, isRecommended, hotScore, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO products (id, name, version, category, cupType, temperature, method, isRecommended, hotScore, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             existing?.id || variant.id || makeId(),
             data.name,
+            data.version,
             data.category || '',
             variant.cupType,
             variant.temperature,
@@ -1633,7 +1715,7 @@ class MySqlProductStore {
         );
       }
       await conn.commit();
-      const groups = await this.listGroups({ keyword: data.name, page: 1, pageSize: 1 });
+      const groups = await this.listGroups({ keyword: data.name, version: data.version, page: 1, pageSize: 1 });
       return groups.items[0];
     } catch (error) {
       await conn.rollback();
@@ -1643,8 +1725,9 @@ class MySqlProductStore {
     }
   }
 
-  async deleteGroup(name) {
-    const [result] = await this.pool.execute('DELETE FROM products WHERE name = ?', [name]);
+  async deleteGroup(name, version = '1.0') {
+    const productVersion = normalizeProductVersion(version);
+    const [result] = await this.pool.execute('DELETE FROM products WHERE name = ? AND version = ?', [name, productVersion]);
     if (result.affectedRows === 0) {
       const error = new Error('产品不存在');
       error.status = 404;
@@ -2247,5 +2330,8 @@ function createStore() {
 
 module.exports = {
   createStore,
-  validateProductInput
+  validateProductInput,
+  JsonProductStore,
+  normalizeProductVersion,
+  normalizeProductName
 };

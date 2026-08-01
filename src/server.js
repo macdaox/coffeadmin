@@ -14,7 +14,9 @@ app.use(express.json({ limit: '8mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const sessionSecret = process.env.SESSION_SECRET || process.env.ADMIN_PASSWORD || 'local-dev-session-secret';
-const sessionMaxAgeSeconds = Number(process.env.SESSION_MAX_AGE_SECONDS || 60 * 60 * 24);
+// Keep mini-program users signed in for 30 days by default. Deployments can
+// still override this with SESSION_MAX_AGE_SECONDS.
+const sessionMaxAgeSeconds = Number(process.env.SESSION_MAX_AGE_SECONDS || 60 * 60 * 24 * 30);
 
 function ok(res, data, extra = {}) {
   res.json({ success: true, data, ...extra });
@@ -267,13 +269,14 @@ app.post('/api/user/wechat-login', async (req, res, next) => {
 app.get('/api/user/session', (req, res) => {
   const user = getBearerUser(req);
   if (!user) return fail(res, 401, '未登录');
-  ok(res, {
+  const sessionUser = {
     id: user.id,
     username: user.username,
     displayName: user.displayName || user.username,
     role: user.role === 'manager' ? 'manager' : 'staff',
     wechatBound: Boolean(user.wechatBound)
-  });
+  };
+  ok(res, sessionUser, { token: createAppToken(sessionUser) });
 });
 
 app.get('/api/user/profile', requireAppUser, async (req, res, next) => {
@@ -404,13 +407,14 @@ app.post('/api/product/search', requireAppUser, async (req, res, next) => {
   try {
     const keyword = String(req.body.keyword || '').trim();
     if (!keyword) return fail(res, 400, '请输入产品名称');
-    const product = await store.search(keyword);
+    const product = await store.search(keyword, req.body.version || '1.0');
     if (!product) return fail(res, 404, '未找到对应产品，请检查名称');
     ok(res, {
       id: product.id,
       name: product.name,
       cupType: product.cupType,
       temperature: product.temperature,
+      version: product.version,
       method: product.method
     });
   } catch (error) {
@@ -421,7 +425,7 @@ app.post('/api/product/search', requireAppUser, async (req, res, next) => {
 app.get('/api/product/recommend', requireAppUser, async (req, res, next) => {
   try {
     const limit = Math.min(Number(req.query.limit || 8), 20);
-    ok(res, await store.recommend(limit));
+    ok(res, await store.recommend(limit, req.query.version || '1.0'));
   } catch (error) {
     next(error);
   }
@@ -430,7 +434,7 @@ app.get('/api/product/recommend', requireAppUser, async (req, res, next) => {
 app.get('/api/product/hot', requireAppUser, async (req, res, next) => {
   try {
     const limit = Math.min(Number(req.query.limit || 8), 20);
-    ok(res, await store.hot(limit));
+    ok(res, await store.hot(limit, req.query.version || '1.0'));
   } catch (error) {
     next(error);
   }
@@ -442,6 +446,7 @@ app.get('/api/product/catalog', requireAppUser, async (req, res, next) => {
     const pageSize = Math.min(Math.max(Number(req.query.pageSize || 200), 1), 500);
     const result = await store.listGroups({
       keyword: req.query.keyword || '',
+      version: req.query.version || '1.0',
       page,
       pageSize
     });
@@ -497,6 +502,7 @@ app.get('/api/admin/product/list', requireAdmin, async (req, res, next) => {
     const result = await store.listGroups({
       keyword: req.query.keyword || '',
       category: req.query.category || '',
+      version: req.query.version || '1.0',
       page,
       pageSize
     });
@@ -535,7 +541,7 @@ app.delete('/api/admin/category/delete', requireAdmin, async (req, res, next) =>
 
 app.post('/api/admin/product/create', requireAdmin, async (req, res, next) => {
   try {
-    ok(res, await store.saveGroup(req.body));
+    ok(res, await store.saveGroup({ ...req.body, version: req.body.version || '1.0' }));
   } catch (error) {
     next(error);
   }
@@ -543,7 +549,7 @@ app.post('/api/admin/product/create', requireAdmin, async (req, res, next) => {
 
 app.put('/api/admin/product/update', requireAdmin, async (req, res, next) => {
   try {
-    ok(res, await store.saveGroup(req.body));
+    ok(res, await store.saveGroup({ ...req.body, version: req.body.version || '1.0' }));
   } catch (error) {
     next(error);
   }
@@ -553,7 +559,7 @@ app.delete('/api/admin/product/delete', requireAdmin, async (req, res, next) => 
   try {
     const name = req.body.name || req.query.name;
     if (!name) return fail(res, 400, '缺少产品名称');
-    await store.deleteGroup(String(name));
+    await store.deleteGroup(String(name), req.body.version || req.query.version || '1.0');
     ok(res, true);
   } catch (error) {
     next(error);

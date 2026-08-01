@@ -39,6 +39,7 @@ const dashboardRecentProductsEl = document.querySelector('#dashboardRecentProduc
 const dashboardCategoryStatsEl = document.querySelector('#dashboardCategoryStats');
 const dashboardFavoriteRankEl = document.querySelector('#dashboardFavoriteRank');
 const toastEl = document.querySelector('#toast');
+const productVersionTabs = [...document.querySelectorAll('.product-version-tab')];
 
 const fields = {
   id: document.querySelector('#idInput'),
@@ -54,6 +55,7 @@ let appUsers = [];
 let categories = [];
 let glossaryStats = { total: 0, topTerms: [], recentLogs: [] };
 let favoriteRank = [];
+let activeProductVersion = '1.0';
 
 function renderDashboard() {
   dashboardProductCountEl.textContent = String(products.length);
@@ -310,6 +312,7 @@ async function loadProducts() {
     page: '1',
     pageSize: '100'
   });
+  params.set('version', activeProductVersion);
   const json = await request(`/api/admin/product/list?${params.toString()}`);
   products = json.data;
   render();
@@ -344,7 +347,7 @@ async function loadFavoriteRank() {
 }
 
 function openEditor(product) {
-  document.querySelector('#dialogTitle').textContent = product ? '编辑产品' : '新增产品';
+  document.querySelector('#dialogTitle').textContent = product ? `编辑 ${activeProductVersion} 产品` : `新增 ${activeProductVersion} 产品`;
   fields.id.value = product?.id || '';
   fields.previousName.value = product?.name || '';
   fields.name.value = product?.name || '';
@@ -388,6 +391,7 @@ function getPayload() {
     previousName: fields.previousName.value,
     name: fields.name.value,
     category: fields.category.value.trim(),
+    version: activeProductVersion,
     variants: readVariants()
   };
 }
@@ -449,6 +453,20 @@ categoryFilterSelect.addEventListener('change', () => {
 });
 
 newBtn.addEventListener('click', () => openEditor());
+productVersionTabs.forEach((button) => {
+  button.addEventListener('click', () => {
+    const version = button.dataset.version;
+    if (!['1.0', '2.0'].includes(version) || version === activeProductVersion) return;
+    activeProductVersion = version;
+    productVersionTabs.forEach((item) => {
+      const active = item.dataset.version === version;
+      item.classList.toggle('active', active);
+      item.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    newBtn.textContent = `新增 ${version} 产品`;
+    loadProducts().catch((error) => toast(error.message));
+  });
+});
 closeBtn.addEventListener('click', () => dialog.close());
 newUserBtn.addEventListener('click', () => openUserEditor());
 userCloseBtn.addEventListener('click', () => userDialog.close());
@@ -527,7 +545,7 @@ bodyEl.addEventListener('click', async (event) => {
     try {
       await request('/api/admin/product/delete', {
         method: 'DELETE',
-        body: JSON.stringify({ name: product.name })
+        body: JSON.stringify({ name: product.name, version: activeProductVersion })
       });
       toast('已删除');
       await loadProducts();
